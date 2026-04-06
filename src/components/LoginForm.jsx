@@ -21,11 +21,14 @@ export default function LoginForm({ onLogin }) {
 
   const onSubmit = async (data) => {
     try {
+      const fName = data.firstName.trim();
+      const nId = data.nationalId.trim();
+
       const { data: users, error } = await supabase
         .from('dcp_members')
         .select('id, full_name, is_admin')
-        .eq('national_id', data.nationalId)
-        .ilike('full_name', `${data.firstName}%`)
+        .eq('national_id', nId)
+        .ilike('full_name', `${fName}%`)
         .limit(1);
 
       if (error) throw error;
