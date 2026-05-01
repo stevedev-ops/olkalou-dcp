@@ -27,7 +27,8 @@ export default function Enrollment({ memberId }) {
   };
 
   const handleEnrolSuccess = (newMember) => {
-    setLastEnrolled(newMember);
+    // newMember is { token, member: {...} } from the API
+    setLastEnrolled(newMember.member || newMember);
   };
 
   const resetForm = () => {

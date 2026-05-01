@@ -1,0 +1,290 @@
+from rest_framework import status, views, response, generics
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Count, Q
+from .models import Member, Invite, VoterRecord
+from .serializers import MemberSerializer, InviteSerializer, VoterRecordSerializer
+
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
+
+from rest_framework.throttling import AnonRateThrottle
+
+class LoginThrottle(AnonRateThrottle):
+    scope = 'login'
+
+class MemberLoginView(views.APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginThrottle]
+    def post(self, request):
+        first_name = request.data.get('firstName', '').strip()
+        national_id = request.data.get('nationalId', '').strip()
+
+        if not first_name or not national_id:
+            return response.Response(
+                {"error": "First name and National ID are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        member = Member.objects.filter(
+            national_id=national_id,
+            full_name__istartswith=first_name
+        ).first()
+
+        if not member:
+            return response.Response(
+                {"error": "No member found with that First Name and ID combination."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        token, _ = Token.objects.get_or_create(user=member)
+        return response.Response({
+            "token": token.key,
+            "member": MemberSerializer(member).data
+        })
+
+class MemberRegisterView(views.APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        data = request.data.copy()
+        referrer_id = data.get('referred_by')
+        invite_token = data.get('invite_token')
+        
+        # SECURITY FIX: Force is_admin to False for all public registrations
+        data['is_admin'] = False
+        data['is_staff'] = False
+        data['is_superuser'] = False
+
+        # 1. Quota Check
+        if referrer_id and not invite_token:
+            try:
+                referrer = Member.objects.get(id=referrer_id)
+                quota = 25 if referrer.referred_by is None else 5
+                current_count = referrer.recruits.count()
+                if current_count >= quota:
+                    return response.Response(
+                        {"error": f"Recruiter has reached their quota of {quota} members."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except Member.DoesNotExist:
+                return response.Response({"error": "Invalid referrer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 2. Duplicate Check
+        if Member.objects.filter(Q(phone=data.get('phone')) | Q(national_id=data.get('national_id'))).exists():
+            return response.Response(
+                {"error": "Phone or ID already registered."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 3. Invite Token Check
+        if invite_token:
+            try:
+                invite = Invite.objects.get(id=invite_token)
+                if invite.is_used:
+                    return response.Response({"error": "Invite already used."}, status=status.HTTP_400_BAD_REQUEST)
+                invite.is_used = True
+                invite.save()
+            except (Invite.DoesNotExist, ValueError):
+                return response.Response({"error": "Invalid invite code."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4. Create Member
+        serializer = MemberSerializer(data=data)
+        if serializer.is_valid():
+            member = serializer.save()
+            
+            # Check Voter Register with enhanced matching
+            is_verified = VoterRecord.objects.filter(
+                Q(id_number=member.national_id) | Q(phone_number=member.phone)
+            ).exists()
+            
+            if not is_verified:
+                # Try masked ID matching (e.g. 3******5)
+                # We check for records where the ID matches the pattern of the provided ID
+                id_len = len(member.national_id)
+                if id_len >= 5:
+                    id_pattern = f"{member.national_id[0]}{'*' * (id_len - 2)}{member.national_id[-1]}"
+                    
+                    # Fuzzy name matching: Split into words and check if at least 2 parts match
+                    name_parts = [p for p in member.full_name.upper().split(' ') if len(p) > 2]
+                    
+                    potential_matches = list(VoterRecord.objects.filter(id_number=id_pattern))
+                    
+                    # Pass 1: Try to match at least 2 name parts for high confidence
+                    for record in potential_matches:
+                        record_name_upper = record.full_name.upper()
+                        match_count = sum(1 for part in name_parts if part in record_name_upper)
+                        if match_count >= 2:
+                            is_verified = True
+                            break
+                    
+                    # Pass 2: Fallback to 1 name part if no high-confidence match found
+                    if not is_verified:
+                        for record in potential_matches:
+                            record_name_upper = record.full_name.upper()
+                            match_count = sum(1 for part in name_parts if part in record_name_upper)
+                            if match_count >= 1:
+                                is_verified = True
+                                break
+
+            if is_verified:
+                member.is_voter_verified = True
+                member.save()
+
+            token, _ = Token.objects.get_or_create(user=member)
+            return response.Response({
+                "token": token.key,
+                "member": serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class MemberMeView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        return response.Response(MemberSerializer(request.user).data)
+
+class MemberPublicView(views.APIView):
+    permission_classes = [AllowAny]
+    def get(self, request, pk):
+        try:
+            member = Member.objects.get(pk=pk)
+            return response.Response({
+                "id": member.id,
+                "full_name": member.full_name
+            })
+        except Member.DoesNotExist:
+            return response.Response({"error": "Member not found"}, status=status.HTTP_404_NOT_FOUND)
+
+class MemberInsightsView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request, pk):
+        if not request.user.is_admin and request.user.id != int(pk):
+            return response.Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            member = Member.objects.get(pk=pk)
+        except Member.DoesNotExist:
+            return response.Response({"error": "Member not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Lineage (Walking up)
+        lineage = []
+        curr = member
+        while curr:
+            lineage.insert(0, MemberSerializer(curr).data)
+            curr = curr.referred_by
+            if len(lineage) > 10: break # Safety break
+
+        # Network Size (Recursive count - simplified for now, can be optimized with extra logic)
+        def get_all_recruits(m, depth=0):
+            if depth > 5: return []
+            result = []
+            for r in m.recruits.all():
+                result.append(r)
+                result.extend(get_all_recruits(r, depth + 1))
+            return result
+
+        network = get_all_recruits(member)
+        
+        return response.Response({
+            "member_id": member.id,
+            "tier": len(lineage),
+            "network_size": len(network),
+            "direct_invites": member.recruits.count(),
+            "lineage": lineage,
+            "direct_inviter": lineage[-2] if len(lineage) > 1 else None,
+            "top_mobilizer": lineage[0] if lineage else None
+        })
+
+class MemberListView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Member.objects.all().order_by('-id')
+    serializer_class = MemberSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        referred_by = self.request.query_params.get('referred_by')
+        if referred_by:
+            if referred_by == 'null':
+                queryset = queryset.filter(referred_by__isnull=True)
+            else:
+                queryset = queryset.filter(referred_by=referred_by)
+
+        # ALWAYS filter out admins and staff from the public member lists
+        queryset = queryset.filter(is_admin=False, is_staff=False)
+
+        if not self.request.user.is_admin:
+            # Regular users can only see their direct recruits
+            queryset = queryset.filter(referred_by=self.request.user)
+        
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(full_name__icontains=search) | Q(national_id__icontains=search)
+            )
+        
+        voter_status = self.request.query_params.get('voter_status')
+        if voter_status == 'verified':
+            queryset = queryset.filter(is_voter_verified=True)
+        elif voter_status == 'unverified':
+            queryset = queryset.filter(is_voter_verified=False)
+            
+        sort = self.request.query_params.get('sort')
+        if sort == 'voter_status':
+            queryset = queryset.order_by('-is_voter_verified', '-id')
+        elif sort == 'voter_status_asc':
+            queryset = queryset.order_by('is_voter_verified', '-id')
+            
+        return queryset
+class MemberDetailView(generics.RetrieveUpdateAPIView):
+    permission_classes = [IsAdminUser]
+    queryset = Member.objects.all()
+    serializer_class = MemberSerializer
+
+class VoterRecordPagination(PageNumberPagination):
+    page_size = 50
+
+class VoterRecordListView(generics.ListAPIView):
+    permission_classes = [IsAdminUser]
+    queryset = VoterRecord.objects.all().order_by('full_name')
+    serializer_class = VoterRecordSerializer
+    pagination_class = VoterRecordPagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(full_name__icontains=search) | 
+                Q(id_number__icontains=search) | 
+                Q(phone_number__icontains=search)
+            )
+        
+        ward = self.request.query_params.get('ward')
+        if ward:
+            queryset = queryset.filter(ward__icontains=ward)
+            
+        return queryset
+
+class SystemStatsView(views.APIView):
+    permission_classes = [IsAdminUser]
+    def get(self, request):
+        total = Member.objects.filter(is_admin=False, is_staff=False).count()
+        roots = Member.objects.filter(referred_by__isnull=True, is_admin=False, is_staff=False).count()
+        verified = Member.objects.filter(is_voter_verified=True, is_admin=False, is_staff=False).count()
+        unverified = total - verified
+        
+        return response.Response({
+            "total_registered": total,
+            "total_roots": roots,
+            "verified_voters": verified,
+            "unverified_new": unverified,
+        })
+
+class InviteCreateView(generics.CreateAPIView):
+    permission_classes = [IsAdminUser]
+    queryset = Invite.objects.all()
+    serializer_class = InviteSerializer
+
+class InviteDetailView(generics.RetrieveAPIView):
+    permission_classes = [AllowAny]
+    queryset = Invite.objects.all()
+    serializer_class = InviteSerializer
+    lookup_field = 'id'

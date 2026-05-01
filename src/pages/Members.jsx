@@ -8,7 +8,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
 
 export default function Members({ memberId, isAdmin = false }) {
   const [members, setMembers] = useState([]);
@@ -19,17 +19,18 @@ export default function Members({ memberId, isAdmin = false }) {
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("dcp_members")
-        .select("*")
-        .eq("referred_by", memberId)
-        .order("id", { ascending: false });
+      const { data, error } = await api.getMembers({ referred_by: memberId });
 
       if (error) {
+        if (error.message?.includes('401') || error.message?.includes('403')) {
+          // If in a real app, we'd redirect or refresh
+          console.warn("Unauthorized access to member list");
+        }
         throw error;
       }
 
-      setMembers(data || []);
+      const list = data.results || [];
+      setMembers(list);
     } catch (err) {
       console.error("Members fetch failed:", err);
       toast.error("Unable to load network members right now.");

@@ -8,7 +8,7 @@ import Reports from './pages/Reports';
 import Admin from './pages/Admin';
 import Enrollment from './pages/Enrollment';
 import Login from './pages/Login';
-import { supabase } from "./lib/supabase";
+import { api } from "./lib/api";
 
 function App() {
   const [memberId, setMemberId] = useState(() => localStorage.getItem("dcp_member_id"));
@@ -24,17 +24,21 @@ function App() {
 
   const showMemberNav = memberId && !isAdmin && !isLanding && !isLoginPage;
 
-  const loadMemberProfile = useCallback(async (id) => {
+  const loadMemberProfile = useCallback(async () => {
     setProfileLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("dcp_members")
-        .select("id, full_name, is_admin")
-        .eq("id", id)
-        .maybeSingle();
+      const { data, error } = await api.getMe();
 
-      if (error) throw error;
-      setMemberProfile(data || null);
+      if (error) {
+        // If 401, token might be invalid
+        if (error.message?.includes('Invalid token')) {
+          handleLogout();
+        }
+        throw new Error(error.message);
+      }
+      
+      const member = data;
+      setMemberProfile(member || null);
     } catch (error) {
       console.error("Failed to load member profile:", error);
       setMemberProfile(null);
@@ -45,20 +49,22 @@ function App() {
 
   useEffect(() => {
     if (memberId) {
-      loadMemberProfile(memberId);
+      loadMemberProfile();
     } else {
       setMemberProfile(null);
       setProfileLoading(false);
     }
   }, [memberId, loadMemberProfile]);
 
-  const handleLogin = (id) => {
+  const handleLogin = (id, token) => {
     localStorage.setItem("dcp_member_id", String(id));
+    if (token) localStorage.setItem("dcp_token", token);
     setMemberId(String(id));
   };
 
   const handleLogout = () => {
     localStorage.removeItem("dcp_member_id");
+    localStorage.removeItem("dcp_token");
     setMemberId(null);
     setMemberProfile(null);
     navigate("/");

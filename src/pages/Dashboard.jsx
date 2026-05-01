@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users, CheckCircle, Lock, Star, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
 import logo from "../assets/logo.png";
 
 // ─── Tier config for root members (25 slots = 5 tiers × 5) ───────────────────
@@ -208,15 +208,15 @@ export default function Dashboard({ memberId, onLogout }) {
 
   const fetchMemberData = useCallback(async () => {
     try {
-      const { data, error: fetchErr } = await supabase
-        .from("dcp_members")
-        .select("*")
-        .eq("id", memberId)
-        .single();
-      if (fetchErr || !data) throw new Error("Member not found");
-      setMember(data);
-      fetchReferralCount(data.id);
-      fetchNetworkSize(data.id);
+      const { data: insights, error: fetchErr } = await api.getInsights(memberId);
+      if (fetchErr) throw new Error("Member not found");
+      
+      // The insights endpoint returns comprehensive data
+      const memberData = insights.lineage[insights.lineage.length - 1];
+      setMember(memberData);
+      setReferralCount(insights.direct_invites || 0);
+      setNetworkSize(insights.network_size || 0);
+      setNetworkDepth(insights.network_depth || (insights.tier - 1));
     } catch (err) {
       console.error("Dashboard data error:", err);
       setError(true);
@@ -228,39 +228,6 @@ export default function Dashboard({ memberId, onLogout }) {
   useEffect(() => {
     if (memberId) fetchMemberData();
   }, [memberId, fetchMemberData]);
-
-  const fetchReferralCount = async (id) => {
-    const { count } = await supabase
-      .from("dcp_members")
-      .select("*", { count: "exact", head: true })
-      .eq("referred_by", id);
-    setReferralCount(count || 0);
-  };
-
-  const fetchNetworkSize = async (id) => {
-    let totalSizeCount = 0;
-    let maxDepthLevel = 0;
-    let currentLevelIds = [id];
-
-    // Recursive search up to 4 levels for the member dashboard
-    for (let depth = 1; depth <= 4; depth++) {
-      if (!currentLevelIds.length) break;
-
-      const { data: children } = await supabase
-        .from("dcp_members")
-        .select("id")
-        .in("referred_by", currentLevelIds);
-
-      if (!children || children.length === 0) break;
-
-      totalSizeCount += children.length;
-      maxDepthLevel = depth;
-      currentLevelIds = children.map((c) => c.id);
-    }
-
-    setNetworkSize(totalSizeCount);
-    setNetworkDepth(maxDepthLevel);
-  };
 
   const isRoot = member?.referred_by === null;
   const quota = isRoot ? 25 : 5;

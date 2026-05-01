@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 void motion;
 import { User, CreditCard, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
 
 const schema = z.object({
   firstName: z.string().min(2, "First name is required"),
@@ -24,22 +24,19 @@ export default function LoginForm({ onLogin }) {
       const fName = data.firstName.trim();
       const nId = data.nationalId.trim();
 
-      const { data: users, error } = await supabase
-        .from('dcp_members')
-        .select('id, full_name, is_admin')
-        .eq('national_id', nId)
-        .ilike('full_name', `${fName}%`)
-        .limit(1);
+      const { data: res, error } = await api.login(fName, nId);
 
       if (error) throw error;
-      if (!users || users.length === 0) {
+      const { member: user, token } = res;
+
+      if (!user) {
         throw new Error("No member found with that First Name and ID combination.");
       }
 
-      toast.success(`Welcome back, ${users[0].full_name.split(' ')[0]}!`);
-      onLogin(users[0].id);
+      toast.success(`Welcome back, ${user.full_name.split(' ')[0]}!`);
+      onLogin(user.id, token);
       
-      if (users[0].is_admin) {
+      if (user.is_admin) {
         navigate("/admin", { replace: true });
       } else {
         navigate("/dashboard", { replace: true });

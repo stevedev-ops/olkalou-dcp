@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Hero from '../components/Hero';
 import RegistrationForm from '../components/RegistrationForm';
 import LoginForm from '../components/LoginForm';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Lock } from "lucide-react";
 
 export default function Landing({ onLogin, referrerId, inviteToken }) {
@@ -23,11 +23,7 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
     let cancelled = false;
     const fetchReferrerName = async () => {
       try {
-        const { data } = await supabase
-          .from('dcp_members')
-          .select('full_name')
-          .eq('id', referrerId)
-          .single();
+        const { data, error } = await api.getMemberPublic(referrerId);
 
         if (!cancelled) {
           if (data) {
@@ -54,11 +50,7 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
     let cancelled = false;
     const validateInvite = async () => {
       try {
-        const { data } = await supabase
-          .from('dcp_invites')
-          .select('is_used')
-          .eq('id', inviteToken)
-          .single();
+        const { data, error } = await api.getInvite(inviteToken);
 
         if (!cancelled) {
           if (data && !data.is_used) {
@@ -127,7 +119,7 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
             <RegistrationForm
               referrerId={referrerValid ? referrerId : null}
               inviteToken={inviteValid ? inviteToken : null}
-              onSuccess={(newUser) => { onLogin(newUser.id); navigate("/dashboard"); }}
+              onSuccess={(res) => { onLogin(res.member.id, res.token); navigate("/dashboard"); }}
             />
           ) : (
             <div className="max-w-md mx-auto text-center py-16 space-y-4">
@@ -142,7 +134,7 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
             </div>
           )
         ) : (
-          <LoginForm onLogin={onLogin} />
+          <LoginForm onLogin={(id, token) => onLogin(id, token)} />
         )}
 
         <footer className="mt-12 text-center border-t border-slate-200 pt-8 pb-10">

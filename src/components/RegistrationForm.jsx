@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 void motion;
 import { User, Phone, CreditCard, MapPin, ShieldCheck, Mail } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
 import { wardsWithCenters } from "../lib/pollingCenters";
 
 const schema = z.object({
@@ -42,92 +42,29 @@ export default function RegistrationForm({ referrerId, inviteToken, onSuccess, i
 
   const onSubmit = async (data) => {
     try {
-      // 0. Block self-enrollment — referrerId or inviteToken is mandatory
-      if (!referrerId && !inviteToken && !isAdmin) {
-        throw new Error("Self-enrollment is not allowed. You must be invited by an existing member or have an official HQ invite code.");
-      }
-
-      // 1. Check if user already exists (use limit(1) to avoid 406 from maybeSingle)
-      const { data: existingUsers, error: checkError } = await supabase
-        .from('dcp_members')
-        .select('id')
-        .or(`phone.eq.${data.phone},national_id.eq.${data.nationalId}`)
-        .limit(1);
-
-      if (checkError) throw checkError;
-
-      if (existingUsers && existingUsers.length > 0) {
-        throw new Error("Phone or ID already registered. Try logging in.");
-      }
-
-      // 1.5. Atomic check for inviteToken validity
-      if (inviteToken) {
-        const { data: invite, error: inviteErr } = await supabase
-          .from('dcp_invites')
-          .select('is_used')
-          .eq('id', inviteToken)
-          .single();
-        
-        if (inviteErr || !invite) throw new Error("This invitation code is invalid.");
-        if (invite.is_used) throw new Error("This invitation link has already been used to register a member.");
-      }
-
-      // 2. Enforce referral quota (skip if using an inviteToken for a new Root)
-      if (referrerId && !inviteToken) {
-        const { data: referrer, error: refErr } = await supabase
-          .from('dcp_members')
-          .select('id, referred_by')
-          .eq('id', referrerId)
-          .single();
-
-        if (refErr || !referrer) throw new Error("Invalid referral link. Please check with your recruiter.");
-
-        const quota = referrer.referred_by === null ? 25 : 5;
-
-        const { count: refCount } = await supabase
-          .from('dcp_members')
-          .select('*', { count: 'exact', head: true })
-          .eq('referred_by', referrerId);
-
-        if ((refCount || 0) >= quota) {
-          throw new Error(`Your recruiter has reached their recruitment quota of ${quota} members. Contact the party office for assistance.`);
-        }
-      }
-
-      // 3. Insert into dcp_members
       const fullName = [data.firstName, data.secondName, data.lastName]
         .filter(Boolean)
         .join(" ");
 
-      const { data: newUser, error } = await supabase
-        .from('dcp_members')
-        .insert([{
-          full_name: fullName,
-          phone: data.phone,
-          national_id: data.nationalId,
-          email: data.email,
-          yob: parseInt(data.yob),
-          ward: data.ward,
-          polling_station: data.pollingCenter,
-          referred_by: referrerId || null,
-        }])
-        .select()
-        .single();
+      const memberPayload = {
+        full_name: fullName,
+        phone: data.phone,
+        national_id: data.nationalId,
+        email: data.email,
+        yob: parseInt(data.yob),
+        ward: data.ward,
+        polling_station: data.pollingCenter,
+        referred_by: referrerId || null
+      };
 
-      if (error) throw error;
+      const { data: res, error } = await api.register(memberPayload, inviteToken);
 
-      // 6. If using an inviteToken, mark it as used
-      if (inviteToken) {
-        const { error: inviteError } = await supabase
-          .from('dcp_invites')
-          .update({ is_used: true })
-          .eq('id', inviteToken);
-
-        if (inviteError) console.error("Failed to mark invite as used:", inviteError);
+      if (error) {
+        throw new Error(error.error || error.message || "Registration failed.");
       }
 
       toast.success("Registration Successful!");
-      onSuccess(newUser);
+      onSuccess(res);
     } catch (error) {
       toast.error(error.message || "Registration failed. Please try again.");
     }

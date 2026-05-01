@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { BarChart3, Users, MapPin, ShieldCheck, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
 
 const WARD_CHART_PAGE_SIZE = 5;
 const WARD_LIST_PAGE_SIZE = 10;
@@ -58,14 +58,17 @@ export default function Reports({ memberId }) {
   const fetchReportData = useCallback(async () => {
     setLoading(true);
     try {
-      let mainQuery = supabase.from("dcp_members").select("*").order("id", { ascending: false });
-      if (memberId) mainQuery = mainQuery.eq("referred_by", memberId);
+      const { data: members, error } = await api.getMembers(
+        memberId ? { referred_by: memberId } : {}
+      );
 
-      const { data, error } = await mainQuery;
+      if (!error && members) {
+        // members might be paginated, for reports we usually want a larger set or use a specific reports endpoint.
+        // For now, mirroring the client-side aggregation.
+        const memberList = Array.isArray(members) ? members : members.results;
+        setMembers(memberList);
 
-      if (!error && data) {
-        setMembers(data);
-        const wardMap = data.reduce((acc, member) => {
+        const wardMap = memberList.reduce((acc, member) => {
           const ward = member.ward || "Unknown";
           acc[ward] = (acc[ward] || 0) + 1;
           return acc;
@@ -77,7 +80,7 @@ export default function Reports({ memberId }) {
             .sort((a, b) => b.count - a.count)
         );
 
-        const pollingMap = data.reduce((acc, member) => {
+        const pollingMap = memberList.reduce((acc, member) => {
           const station = member.polling_station || "Unknown";
           const ward = member.ward || "Unknown";
           const key = station;
@@ -90,28 +93,17 @@ export default function Reports({ memberId }) {
         );
 
         if (memberId) {
-          const directIds = data.map(m => m.id);
-          let downlineCount = 0;
-          if (directIds.length > 0) {
-            let currentLayer = directIds;
-            for (let i = 0; i < 3; i++) {
-              try {
-                const { data: children, error: childErr } = await supabase.from("dcp_members").select("id").in("referred_by", currentLayer);
-                if (childErr || !children || children.length === 0) break;
-                downlineCount += children.length;
-                currentLayer = children.map(c => c.id);
-              } catch { break; }
-            }
+          const { data: insights } = await api.getInsights(memberId);
+          if (insights) {
+            setRootCount(insights.direct_invites);
+            setDelegateCount(insights.network_size - insights.direct_invites);
           }
-          setRootCount(data.length);
-          setDelegateCount(downlineCount);
         } else {
-          const [rootRes, delegateRes] = await Promise.all([
-            supabase.from("dcp_members").select("id", { count: "exact", head: true }).is("referred_by", null),
-            supabase.from("dcp_members").select("id", { count: "exact", head: true }).not("referred_by", "is", null),
-          ]);
-          setRootCount(rootRes?.count ?? 0);
-          setDelegateCount(delegateRes?.count ?? 0);
+          const { data: stats } = await api.getStats();
+          if (stats) {
+            setRootCount(stats.total_roots);
+            setDelegateCount(stats.total_registered - stats.total_roots);
+          }
         }
       }
     } catch (err) {

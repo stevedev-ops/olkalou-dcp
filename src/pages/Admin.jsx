@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
-import { Users, Shield, ChevronRight, ChevronDown, Plus, X, Database, Search, User, Smartphone, MapPin, Hash, Star, LayoutDashboard, Network, BarChart3, LogOut, Menu } from "lucide-react";
+import { Users, Shield, ChevronRight, ChevronDown, Plus, X, Database, Search, User, Smartphone, MapPin, Hash, Star, LayoutDashboard, Network, BarChart3, LogOut, Menu, CheckCircle2, UserCheck, Mail } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../lib/supabase";
+import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import RegistrationForm from "../components/RegistrationForm";
 import logo from "../assets/logo.png";
 import { getChildrenById } from "../lib/memberCache";
 import Reports from "./Reports";
+
+const PAGE_SIZE = 20;
 
 // ─── Tier helper ─────────────────────────────────────────────────────────────
 const TIER_MAP = [
@@ -173,7 +175,7 @@ const TreeNode = ({ member, depth = 0, onSelectMember }) => {
 // Admin Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function Admin() {
+export default function Admin({ onLogout }) {
   const PAGE_SIZE = 50;
   const navigate = useNavigate();
 
@@ -185,10 +187,13 @@ export default function Admin() {
   const [selectedMember, setSelectedMember] = useState(null);
   const [generatedInvite, setGeneratedInvite] = useState(null);
   const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   // Global System Stats
   const [totalRegistered, setTotalRegistered] = useState(0);
   const [totalRoots, setTotalRoots] = useState(0);
+  const [verifiedVoters, setVerifiedVoters] = useState(0);
+  const [unverifiedNew, setUnverifiedNew] = useState(0);
   const [maxRootDepth, setMaxRootDepth] = useState(0);
   const [dbStatus, setDbStatus] = useState("checking"); // "checking" | "online" | "error"
 
@@ -203,6 +208,16 @@ export default function Admin() {
   const [memberPage, setMemberPage] = useState(0);
   const [hasMoreMembers, setHasMoreMembers] = useState(true);
   const [loadingMoreMembers, setLoadingMoreMembers] = useState(false);
+  const [voterStatusFilter, setVoterStatusFilter] = useState("all"); // "all" | "verified" | "unverified"
+  const [memberSort, setMemberSort] = useState("id"); // "id" | "voter_status"
+
+  // Voter Registry States
+  const [voterRecords, setVoterRecords] = useState([]);
+  const [voterPage, setVoterPage] = useState(0);
+  const [hasMoreVoters, setHasMoreVoters] = useState(true);
+  const [loadingVoters, setLoadingVoters] = useState(false);
+  const [voterSearch, setVoterSearch] = useState("");
+  const [voterWardFilter, setVoterWardFilter] = useState("");
 
   // Overview extras
   const [recentMembers, setRecentMembers] = useState([]);
@@ -210,17 +225,16 @@ export default function Admin() {
 
   const loadOverviewData = useCallback(async () => {
     try {
-      const [{ data: recent }, { data: wardData }] = await Promise.all([
-        supabase.from('dcp_members').select('id, full_name, ward, referred_by').order('id', { ascending: false }).limit(6),
-        supabase.from('dcp_members').select('ward'),
-      ]);
-      if (recent) setRecentMembers(recent);
-      if (wardData) {
-        const map = {};
-        wardData.forEach(m => { const w = m.ward || 'Unknown'; map[w] = (map[w] || 0) + 1; });
-        const sorted = Object.entries(map).map(([ward, count]) => ({ ward, count })).sort((a, b) => b.count - a.count).slice(0, 5);
-        setWardSnapshot(sorted);
-      }
+      const { data: allData } = await api.getMembers({});
+      const list = Array.isArray(allData) ? allData : (allData?.results || []);
+      // Filter out admins from overview lists
+      const filteredList = list.filter(m => !m.is_admin && !m.is_staff);
+      const recent = filteredList.slice(0, 6);
+      setRecentMembers(recent);
+      const map = {};
+      filteredList.forEach(m => { const w = m.ward || 'Unknown'; map[w] = (map[w] || 0) + 1; });
+      const sorted = Object.entries(map).map(([ward, count]) => ({ ward, count })).sort((a, b) => b.count - a.count).slice(0, 5);
+      setWardSnapshot(sorted);
     } catch (e) { console.error('Overview data error:', e); }
   }, []);
 
@@ -228,26 +242,10 @@ export default function Admin() {
   const [recruitCounts, setRecruitCounts] = useState({});   // memberId → direct count
   const [referrerNames, setReferrerNames] = useState({});   // memberId → referrer full_name
 
-  // Batch-fetch direct recruit counts for a set of member IDs
-  const fetchRecruitCounts = useCallback(async (ids) => {
-    if (!ids.length) return;
-    const { data } = await supabase.from('dcp_members').select('referred_by').in('referred_by', ids);
-    if (!data) return;
-    const counts = {};
-    data.forEach(r => { counts[r.referred_by] = (counts[r.referred_by] || 0) + 1; });
-    setRecruitCounts(prev => ({ ...prev, ...counts }));
-  }, []);
-
-  // Batch-fetch referrer names for a set of referred_by IDs
-  const fetchReferrerNames = useCallback(async (referrerIds) => {
-    const unique = [...new Set(referrerIds.filter(Boolean))];
-    if (!unique.length) return;
-    const { data } = await supabase.from('dcp_members').select('id, full_name').in('id', unique);
-    if (!data) return;
-    const names = {};
-    data.forEach(r => { names[r.id] = r.full_name; });
-    setReferrerNames(prev => ({ ...prev, ...names }));
-  }, []);
+  // recruit counts are now included directly in the serializer as 'recruits_count'
+  // referrer name is also included as 'referrer_name' — no extra fetches needed
+  const fetchRecruitCounts = useCallback(() => {}, []);
+  const fetchReferrerNames = useCallback(() => {}, []);
 
   // Selected Member Analytics
   const [selectedMemberDirectCount, setSelectedMemberDirectCount] = useState(0);
@@ -257,16 +255,15 @@ export default function Admin() {
   // Fetch Total Registrations + Root Count + DB Health
   const loadTotalRegistered = useCallback(async () => {
     try {
-      const [{ count: total, error: e1 }, { count: rootCount, error: e2 }] = await Promise.all([
-        supabase.from("dcp_members").select("*", { count: "exact", head: true }),
-        supabase.from("dcp_members").select("*", { count: "exact", head: true }).is("referred_by", null),
-      ]);
-      if (e1 || e2) throw new Error("Query failed");
-      if (total !== null) setTotalRegistered(total);
-      if (rootCount !== null) setTotalRoots(rootCount);
+      const { data: stats, error } = await api.getStats();
+      if (error) throw new Error("Query failed");
+      setTotalRegistered(stats.total_registered);
+      setTotalRoots(stats.total_roots);
+      setVerifiedVoters(stats.verified_voters || 0);
+      setUnverifiedNew(stats.unverified_new || 0);
       setDbStatus("online");
     } catch (e) {
-      console.error("Total members count error:", e);
+      console.error("Stats count error:", e);
       setDbStatus("error");
     }
   }, []);
@@ -275,44 +272,60 @@ export default function Admin() {
   const loadRootPage = useCallback(async (pageIdx, q = "") => {
     setLoadingMoreRoots(true);
     try {
-      let query = supabase.from('dcp_members').select('*').is('referred_by', null).order('id', { ascending: false });
-      if (q.trim()) query = query.or(`full_name.ilike.%${q}%,national_id.ilike.%${q}%`);
-      const from = pageIdx * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
-      const { data, error } = await query.range(from, to);
-      if (error) throw error;
+      const { data, error } = await api.getMembers({ 
+        referred_by: 'null', 
+        search: q,
+        page: pageIdx + 1
+      });
+      if (error) {
+        if (error.message?.includes('401') || error.message?.includes('403')) {
+          navigate('/');
+        }
+        throw error;
+      }
       if (data) {
-        if (pageIdx === 0) setRoots(data);
-        else setRoots(prev => [...prev, ...data]);
-        setHasMoreRoots(data.length === PAGE_SIZE);
+        // Double check filter: only keep non-admins in mobilizer list
+        const members = (data.results || []).filter(m => !m.is_admin && !m.is_staff);
+        if (pageIdx === 0) setRoots(members);
+        else setRoots(prev => [...prev, ...members]);
+        setHasMoreRoots(!!data.next);
         setRootPage(pageIdx);
-        fetchRecruitCounts(data.map(m => m.id));
       }
     } catch (err) { console.error(err); toast.error("Error loading mobilizers"); }
     finally { setLoadingMoreRoots(false); }
-  }, [fetchRecruitCounts]);
+  }, [navigate]);
 
   // Fetch Members Page
-  const loadMembersPage = useCallback(async (pageIdx, q = "") => {
+  const loadMembersPage = useCallback(async (pageIdx, q = "", voterStatus = "all") => {
     setLoadingMoreMembers(true);
     try {
-      let query = supabase.from('dcp_members').select('*').order('id', { ascending: false });
-      if (q.trim()) query = query.or(`full_name.ilike.%${q}%,national_id.ilike.%${q}%`);
-      const from = pageIdx * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
-      const { data, error } = await query.range(from, to);
-      if (error) throw error;
+      const params = { 
+        search: q,
+        page: pageIdx + 1,
+        sort: memberSort === "voter_status" ? "voter_status" : undefined
+      };
+      if (voterStatus !== "all") {
+        params.voter_status = voterStatus;
+      }
+
+      const { data, error } = await api.getMembers(params);
+      if (error) {
+        if (error.message?.includes('401') || error.message?.includes('403')) {
+          navigate('/');
+        }
+        throw error;
+      }
       if (data) {
-        if (pageIdx === 0) setAllMembers(data);
-        else setAllMembers(prev => [...prev, ...data]);
-        setHasMoreMembers(data.length === PAGE_SIZE);
+        // Double check filter: only keep non-admins
+        const members = (data.results || []).filter(m => !m.is_admin && !m.is_staff);
+        if (pageIdx === 0) setAllMembers(members);
+        else setAllMembers(prev => [...prev, ...members]);
+        setHasMoreMembers(!!data.next);
         setMemberPage(pageIdx);
-        fetchRecruitCounts(data.map(m => m.id));
-        fetchReferrerNames(data.map(m => m.referred_by));
       }
     } catch (err) { console.error(err); toast.error("Error loading recruits"); }
     finally { setLoadingMoreMembers(false); }
-  }, [fetchRecruitCounts, fetchReferrerNames]);
+  }, [navigate]);
 
   // Debounced search effect
   useEffect(() => {
@@ -320,19 +333,52 @@ export default function Admin() {
       if (activeTab === "mobilizers") {
         loadRootPage(0, searchQuery);
       } else if (activeTab === "all") {
-        loadMembersPage(0, searchQuery);
+        loadMembersPage(0, searchQuery, voterStatusFilter);
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [searchQuery, activeTab, loadRootPage, loadMembersPage]);
+  }, [searchQuery, voterStatusFilter, activeTab, loadRootPage, loadMembersPage]);
 
   // Initial Fetch
   useEffect(() => {
     loadTotalRegistered();
     loadRootPage(0, "");
-    loadMembersPage(0, "");
+    loadMembersPage(0, "", voterStatusFilter);
     loadOverviewData();
-  }, [loadTotalRegistered, loadRootPage, loadMembersPage, loadOverviewData]);
+    
+    // Fetch current admin profile
+    api.getMe().then(({ data }) => {
+      if (data) setCurrentUser(data);
+    });
+  }, [loadTotalRegistered, loadRootPage, loadMembersPage, loadOverviewData, voterStatusFilter]);
+
+  // Fetch Voter Records
+  const loadVoterRecordsPage = useCallback(async (pageIdx, q = "", ward = "") => {
+    setLoadingVoters(true);
+    try {
+      const { data, error } = await api.getVoterRecords({ 
+        search: q,
+        ward: ward,
+        page: pageIdx + 1
+      });
+      if (data) {
+        if (pageIdx === 0) setVoterRecords(data.results || []);
+        else setVoterRecords(prev => [...prev, ...(data.results || [])]);
+        setHasMoreVoters(!!data.next);
+        setVoterPage(pageIdx);
+      }
+    } catch (err) { console.error(err); }
+    finally { setLoadingVoters(false); }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "voter-registry") {
+      const timer = setTimeout(() => {
+        loadVoterRecordsPage(0, voterSearch, voterWardFilter);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, voterSearch, voterWardFilter, loadVoterRecordsPage]);
 
   // Deep Network Analytics logic
   const computeNetworkStats = useCallback(async (memberId) => {
@@ -360,19 +406,10 @@ export default function Admin() {
   }, []);
 
   const buildLineage = useCallback(async (memberId) => {
-    let lineage = [];
-    let currentId = memberId;
-    let fallbackDepth = 0;
     try {
-      while (currentId && fallbackDepth < 10) {
-        const { data } = await supabase.from('dcp_members').select('*').eq('id', currentId).single();
-        if (!data) break;
-        lineage.unshift(data);
-        currentId = data.referred_by;
-        fallbackDepth++;
-      }
-    } catch (err) { console.error(err); }
-    return lineage;
+      const { data: insights } = await api.getInsights(memberId);
+      return insights?.lineage || [];
+    } catch (err) { console.error(err); return []; }
   }, []);
 
   useEffect(() => {
@@ -394,6 +431,24 @@ export default function Admin() {
     return () => { cancelled = true; };
   }, [selectedMember, computeNetworkStats, buildLineage]);
 
+  const handlePromoteToRoot = async () => {
+    if (!selectedMember || !selectedMember.referred_by) return;
+    if (!window.confirm(`Are you sure you want to promote ${selectedMember.full_name} to a Root Mobilizer? They will be detached from their current referrer.`)) return;
+
+    try {
+      const { data, error } = await api.updateMember(selectedMember.id, { referred_by: null });
+      if (error) throw new Error(error.message || "Failed to promote");
+      
+      toast.success(`${selectedMember.full_name} is now a Root Mobilizer!`);
+      setSelectedMember(null);
+      // Reload lists
+      loadRootPage(0, searchQuery);
+      loadMembersPage(0, searchQuery, voterStatusFilter);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   // Derived lineage UI stats
   const directInviter = selectedMemberLineage.length > 1 ? selectedMemberLineage[selectedMemberLineage.length - 2] : null;
   const topMobilizer = selectedMemberLineage.length > 0 ? selectedMemberLineage[0] : null;
@@ -409,11 +464,7 @@ export default function Admin() {
   const generateInviteToken = async () => {
     setIsGeneratingInvite(true);
     try {
-      const { data, error } = await supabase
-        .from('dcp_invites')
-        .insert([{ target_role: 'root' }])
-        .select()
-        .single();
+      const { data, error } = await api.createInvite({ target_role: 'root' });
       
       if (error) throw error;
       if (data) {
@@ -478,6 +529,7 @@ export default function Admin() {
                   <NavItem id="mobilizers" icon={Star} label="Mobilizers" count={roots.length} activeTab={activeTab} setActiveTab={setActiveTab} />
                   <NavItem id="all" icon={Users} label="All Members" count={totalRegistered} activeTab={activeTab} setActiveTab={setActiveTab} />
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Intelligence</p>
+                  <NavItem id="voter-registry" icon={Database} label="Voter Registry" activeTab={activeTab} setActiveTab={setActiveTab} />
                   <NavItem id="analytics" icon={BarChart3} label="System Analytics" activeTab={activeTab} setActiveTab={setActiveTab} />
                </div>
                <div className="p-4 border-t border-slate-100">
@@ -487,11 +539,11 @@ export default function Admin() {
                            <Shield size={14} className="text-dcp-green" />
                         </div>
                         <div>
-                           <p className="text-xs font-black uppercase tracking-widest">System Admin</p>
-                           <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Full Access</p>
+                            <p className="text-xs font-black uppercase tracking-widest">{currentUser?.full_name || 'System Admin'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">{currentUser?.is_admin ? 'HQ Administrator' : 'Mobilizer'}</p>
                         </div>
                      </div>
-                     <button onClick={() => navigate('/')} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-xs font-bold uppercase tracking-widest mt-2">
+                     <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-xs font-bold uppercase tracking-widest mt-2">
                         <LogOut size={14} /> Sign Out
                      </button>
                   </div>
@@ -515,6 +567,7 @@ export default function Admin() {
                   {activeTab === 'tree' && 'Mobilization Tree'}
                   {activeTab === 'mobilizers' && 'Root Directory'}
                   {activeTab === 'all' && 'Membership Registry'}
+                  {activeTab === 'voter-registry' && '2022 Official Voter Database'}
                   {activeTab === 'analytics' && 'Official Party Reports'}
                </h1>
                <div className="flex items-center gap-2 mt-0.5">
@@ -540,18 +593,18 @@ export default function Admin() {
                     <p className="text-4xl font-black text-slate-900">{totalRegistered.toLocaleString()}</p>
                     <div className="mt-4 space-y-1.5">
                       <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Roots</span><span>Delegates</span>
+                        <span>Verified Voters</span><span>Unverified</span>
                       </div>
                       <div className="h-2 rounded-full bg-slate-100 overflow-hidden flex">
                         <div
-                          className="h-full bg-amber-400 transition-all duration-700"
-                          style={{ width: totalRegistered > 0 ? `${Math.round((totalRoots / totalRegistered) * 100)}%` : '0%' }}
+                          className="h-full bg-dcp-green transition-all duration-700"
+                          style={{ width: totalRegistered > 0 ? `${Math.round((verifiedVoters / totalRegistered) * 100)}%` : '0%' }}
                         />
-                        <div className="h-full flex-1 bg-dcp-green/40" />
+                        <div className="h-full flex-1 bg-amber-400/40" />
                       </div>
                       <div className="flex justify-between text-[9px] font-black text-slate-500">
-                        <span>{totalRoots}</span>
-                        <span>{totalRegistered - totalRoots}</span>
+                        <span>{verifiedVoters}</span>
+                        <span>{unverifiedNew}</span>
                       </div>
                     </div>
                   </div>
@@ -618,14 +671,14 @@ export default function Admin() {
                           </p>
                         </div>
                       </div>
-                      <div className="border-t border-slate-800 pt-3 grid grid-cols-2 gap-3 w-full">
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-0.5">Records</p>
-                          <p className="text-sm font-black text-white">{totalRegistered.toLocaleString()}</p>
+                      <div className="border-t border-slate-800 pt-3 flex flex-col gap-2 w-full">
+                        <div className="flex justify-between items-center">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Verified Voters</p>
+                          <p className="text-sm font-black text-dcp-green">{verifiedVoters.toLocaleString()}</p>
                         </div>
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-0.5">Roots</p>
-                          <p className="text-sm font-black text-white">{totalRoots}</p>
+                        <div className="flex justify-between items-center">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">New Registrants</p>
+                          <p className="text-sm font-black text-amber-400">{unverifiedNew.toLocaleString()}</p>
                         </div>
                       </div>
                     </div>
@@ -737,18 +790,132 @@ export default function Admin() {
               <div className="h-full w-full overflow-y-auto custom-scrollbar rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
                 <Reports />
               </div>
+            ) : activeTab === "voter-registry" ? (
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-[calc(100vh-12rem)] animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0 space-y-4">
+                  <div className="flex gap-4 items-center">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        placeholder="Search 2022 voter database by name, ID, or phone..."
+                        className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:border-dcp-green/50 focus:ring-4 focus:ring-dcp-green/10 transition-all font-bold text-sm tracking-wider uppercase"
+                        value={voterSearch}
+                        onChange={(e) => setVoterSearch(e.target.value)}
+                      />
+                    </div>
+                    <div className="relative min-w-[200px]">
+                      <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder="Filter by ward..."
+                        className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:border-dcp-green/50 focus:ring-4 focus:ring-dcp-green/10 transition-all font-bold text-sm tracking-wider uppercase"
+                        value={voterWardFilter}
+                        onChange={(e) => setVoterWardFilter(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="divide-y divide-slate-100 overflow-y-auto flex-1 custom-scrollbar">
+                  {voterRecords.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                        <Database size={24} className="text-slate-400" />
+                      </div>
+                      <p className="font-black text-slate-700 text-sm uppercase tracking-widest">No Voter Records Found</p>
+                      <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wider">
+                        {voterSearch ? `No match for "${voterSearch}"` : "The 2022 database is currently empty or loading."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                      {voterRecords.map(record => (
+                        <div key={record.id} className="p-6 hover:bg-slate-50 transition-colors flex flex-col justify-between border-b border-slate-100">
+                          <div className="flex items-start justify-between mb-4">
+                            <div>
+                              <h4 className="font-black text-slate-900 text-base uppercase tracking-tight">{record.full_name}</h4>
+                              <p className="text-[10px] font-bold text-dcp-green uppercase tracking-[0.2em] mt-1">{record.ward || 'Unknown Ward'}</p>
+                            </div>
+                            <div className="bg-slate-100 px-2 py-1 rounded text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                              2022 Official
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">National ID</p>
+                              <p className="text-xs font-bold text-slate-700">{record.id_number || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Phone Number</p>
+                              <p className="text-xs font-bold text-slate-700">{record.phone_number || 'N/A'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {hasMoreVoters && (
+                    <div className="p-8 flex justify-center">
+                      <button
+                        onClick={() => loadVoterRecordsPage(voterPage + 1, voterSearch, voterWardFilter)}
+                        disabled={loadingVoters}
+                        className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-50 shadow-lg"
+                      >
+                        {loadingVoters ? "Scanning Database..." : "Load More Official Records"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (activeTab === "mobilizers" || activeTab === "all") && (
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-[calc(100vh-12rem)]">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
-                  <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-                    <input
-                      type="text"
-                      placeholder={`SEARCH ${activeTab === "mobilizers" ? "ROOTS" : "ALL MEMBERS"} BY NAME OR ID...`}
-                      className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:border-dcp-green/50 focus:ring-4 focus:ring-dcp-green/10 transition-all font-bold text-sm tracking-wider uppercase"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0 space-y-4">
+                  <div className="flex gap-2 p-1 bg-slate-200/50 rounded-xl w-fit">
+                    {[
+                      { id: 'all', label: 'All Registrants', count: totalRegistered },
+                      { id: 'verified', label: 'Verified Voters', count: verifiedVoters },
+                      { id: 'unverified', label: 'Unverified', count: unverifiedNew }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => { setVoterStatusFilter(tab.id); setMemberPage(0); }}
+                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                          voterStatusFilter === tab.id 
+                            ? 'bg-white text-slate-900 shadow-sm' 
+                            : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        {tab.label} <span className="ml-1 opacity-50">({tab.count})</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-4 items-center">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        placeholder={`SEARCH ${activeTab === "mobilizers" ? "ROOTS" : "ALL MEMBERS"} BY NAME OR ID...`}
+                        className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:border-dcp-green/50 focus:ring-4 focus:ring-dcp-green/10 transition-all font-bold text-sm tracking-wider uppercase"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                    </div>
+                    <button 
+                      onClick={() => {
+                        const newSort = memberSort === "id" ? "voter_status" : "id";
+                        setMemberSort(newSort);
+                        setMemberPage(0);
+                        loadMembersPage(0, searchQuery, voterStatusFilter);
+                      }}
+                      className={`px-6 py-4 rounded-2xl border transition-all font-bold text-xs uppercase tracking-widest flex items-center gap-2 ${
+                        memberSort === "voter_status" 
+                          ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <UserCheck size={16} className={memberSort === "voter_status" ? "text-dcp-green" : ""} />
+                      {memberSort === "voter_status" ? "Verified First" : "Default Sort"}
+                    </button>
                   </div>
                 </div>
                 <div className="divide-y divide-slate-100 overflow-y-auto flex-1 custom-scrollbar">
@@ -762,10 +929,10 @@ export default function Admin() {
                         {searchQuery ? `No match for "${searchQuery}"` : "No records available"}
                       </p>
                     </div>
-                  ) : (activeTab === "mobilizers" ? roots : allMembers).map(member => {
-                    const directCount = recruitCounts[member.id] || 0;
-                    const tier = activeTab === "mobilizers" ? getTierBadge(directCount) : null;
-                    const referrerName = activeTab === "all" ? referrerNames[member.referred_by] : null;
+                    ) : (activeTab === "mobilizers" ? roots : allMembers).map(member => {
+                      const directCount = member.recruits_count || 0;
+                      const tier = activeTab === "mobilizers" ? getTierBadge(directCount) : null;
+                      const referrerName = activeTab === "all" ? member.referrer_name : null;
                     return (
                       <div
                         key={member.id}
@@ -777,7 +944,16 @@ export default function Admin() {
                             {member.referred_by ? <User size={18} /> : <Star size={18} />}
                           </div>
                           <div className="min-w-0">
-                            <h4 className="font-black text-slate-900 truncate">{member.full_name}</h4>
+                            <h4 className="font-black text-slate-900 flex items-center gap-1.5 truncate">
+                              {member.full_name}
+                              {member.is_voter_verified && (
+                                <CheckCircle2 
+                                  size={12} 
+                                  className="text-dcp-green shrink-0" 
+                                  title="Verified 2022 Voter"
+                                />
+                              )}
+                            </h4>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 truncate">
                               {member.ward}
                               {activeTab === "all" && referrerName && (
@@ -853,9 +1029,16 @@ export default function Admin() {
                       <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-white mb-4 border border-white/5">
                         {selectedMember.referred_by ? <User size={32} /> : <Star size={32} className="text-amber-400" />}
                       </div>
-                      <p className="text-dcp-green text-[10px] font-black uppercase tracking-[0.2em] mb-1">
-                        {selectedMember.referred_by ? "Constitutional Delegate" : "Root Mobilizer"}
-                      </p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-dcp-green text-[10px] font-black uppercase tracking-[0.2em]">
+                          {selectedMember.referred_by ? "Constitutional Delegate" : "Root Mobilizer"}
+                        </p>
+                        {selectedMember.is_voter_verified && (
+                          <span className="bg-dcp-green/10 text-dcp-green text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md border border-dcp-green/20 flex items-center gap-1">
+                            <CheckCircle2 size={8} /> Verified Voter
+                          </span>
+                        )}
+                      </div>
                       <h2 className="text-2xl font-black text-white italic tracking-tight">{selectedMember.full_name}</h2>
                     </div>
 
@@ -895,10 +1078,21 @@ export default function Admin() {
                           />
                         )}
                       </div>
+                      {selectedMember.referred_by && (
+                        <div className="mt-4">
+                          <button 
+                            onClick={handlePromoteToRoot}
+                            className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-500 font-black text-[10px] uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Star size={14} /> Promote to Root Mobilizer
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-4 pt-4 border-t border-slate-800">
                       <InfoRow icon={<Smartphone size={16} />} label="Phone" value={selectedMember.phone} />
+                      <InfoRow icon={<Mail size={16} />} label="Email" value={selectedMember.email} />
                       <InfoRow icon={<Hash size={16} />} label="National ID" value={selectedMember.national_id} />
                       <InfoRow icon={<MapPin size={16} />} label="Ward" value={selectedMember.ward} />
                       <InfoRow icon={<MapPin size={16} />} label="Polling" value={selectedMember.polling_station} />

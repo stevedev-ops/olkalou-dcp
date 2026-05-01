@@ -1,40 +1,16 @@
-import { supabase } from "./supabase";
+import { api } from "./api";
 
 const memberCache = new Map();
 const childCache = new Map();
 
-export const getMemberById = async (id) => {
-  if (!id) return null;
-  if (memberCache.has(id)) return memberCache.get(id);
 
-  const { data, error } = await supabase
-    .from("dcp_members")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    console.error("memberCache.getMemberById error:", error);
-    return null;
-  }
-
-  if (data) {
-    memberCache.set(id, data);
-  }
-
-  return data || null;
-};
 
 export const getChildrenById = async (parentId) => {
   if (childCache.has(parentId)) {
     return childCache.get(parentId);
   }
 
-  const { data, error } = await supabase
-    .from("dcp_members")
-    .select("*")
-    .eq("referred_by", parentId)
-    .order("id", { ascending: true });
+  const { data, error } = await api.getMembers({ referred_by: parentId });
 
   if (error) {
     console.error("memberCache.getChildrenById error:", error);
@@ -42,7 +18,7 @@ export const getChildrenById = async (parentId) => {
     return [];
   }
 
-  const children = data || [];
+  const children = Array.isArray(data) ? data : (data.results || []);
   childCache.set(parentId, children);
 
   children.forEach((child) => memberCache.set(child.id, child));
