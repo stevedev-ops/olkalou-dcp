@@ -178,7 +178,7 @@ export default function RegistrationForm({ referrerId, inviteToken, onSuccess, i
                     Select ward
                   </option>
                   {wardsWithCenters.map((ward) => (
-                    <option key={ward.id} value={ward.label}>
+                    <option key={ward.id} value={ward.name}>
                       {ward.label}
                     </option>
                   ))}
