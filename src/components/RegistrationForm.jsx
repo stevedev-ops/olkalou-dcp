@@ -36,7 +36,7 @@ export default function RegistrationForm({ referrerId, inviteToken, onSuccess, i
   });
   const selectedWard = watch("ward");
   const currentCenters = useMemo(() => {
-    const matched = wardsWithCenters.find((ward) => ward.label === selectedWard);
+    const matched = wardsWithCenters.find((ward) => ward.name === selectedWard);
     return matched ? matched.centers : [];
   }, [selectedWard]);
 
