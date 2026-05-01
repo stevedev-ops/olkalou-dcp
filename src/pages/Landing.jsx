@@ -69,7 +69,7 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
   }, [inviteToken]);
 
   return (
-    <div className="flex flex-col items-center bg-slate-50 min-h-screen">
+    <div className="flex flex-col items-center bg-transparent min-h-screen">
       <Hero />
       
       <main className="w-full max-w-7xl mx-auto px-4 pb-12 pt-8">

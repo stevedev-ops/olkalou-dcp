@@ -12,6 +12,35 @@ from rest_framework.throttling import AnonRateThrottle
 class LoginThrottle(AnonRateThrottle):
     scope = 'login'
 
+def get_recursive_downline(member_id, depth_limit=10):
+    """
+    Returns a tuple of (all_member_ids, max_depth) for the given member's downline.
+    """
+    all_ids = set()
+    max_d = 0
+    stack = []
+    
+    # Get direct recruits first
+    direct_recruits = Member.objects.filter(referred_by_id=member_id).values_list('id', flat=True)
+    for rid in direct_recruits:
+        stack.append((rid, 1))
+        all_ids.add(rid)
+        max_d = max(max_d, 1)
+
+    while stack:
+        mid, depth = stack.pop()
+        if depth >= depth_limit:
+            continue
+            
+        recruits = Member.objects.filter(referred_by_id=mid).values_list('id', flat=True)
+        for rid in recruits:
+            if rid not in all_ids:
+                all_ids.add(rid)
+                stack.append((rid, depth + 1))
+                max_d = max(max_d, depth + 1)
+                
+    return list(all_ids), max_d
+
 class MemberLoginView(views.APIView):
     permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
@@ -173,21 +202,14 @@ class MemberInsightsView(views.APIView):
             curr = curr.referred_by
             if len(lineage) > 10: break # Safety break
 
-        # Network Size (Recursive count - simplified for now, can be optimized with extra logic)
-        def get_all_recruits(m, depth=0):
-            if depth > 5: return []
-            result = []
-            for r in m.recruits.all():
-                result.append(r)
-                result.extend(get_all_recruits(r, depth + 1))
-            return result
-
-        network = get_all_recruits(member)
+        # Network Size & Depth (Recursive)
+        network_ids, network_depth = get_recursive_downline(member.id)
         
         return response.Response({
             "member_id": member.id,
             "tier": len(lineage),
-            "network_size": len(network),
+            "network_size": len(network_ids),
+            "network_depth": network_depth,
             "direct_invites": member.recruits.count(),
             "lineage": lineage,
             "direct_inviter": lineage[-2] if len(lineage) > 1 else None,
@@ -300,7 +322,9 @@ class ReportStatsView(views.APIView):
 
         base_qs = Member.objects.filter(is_admin=False, is_staff=False)
         if member_id:
-            base_qs = base_qs.filter(referred_by_id=member_id)
+            downline_ids, _ = get_recursive_downline(member_id)
+            # Include direct recruits AND their downline
+            base_qs = base_qs.filter(id__in=downline_ids)
 
         if mode == 'verified':
             queryset = base_qs.filter(is_voter_verified=True)
