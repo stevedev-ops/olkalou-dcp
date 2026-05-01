@@ -234,10 +234,38 @@ class MemberListView(generics.ListCreateAPIView):
             queryset = queryset.order_by('is_voter_verified', '-id')
             
         return queryset
-class MemberDetailView(generics.RetrieveUpdateAPIView):
+class MemberDetailView(views.APIView):
     permission_classes = [IsAdminUser]
-    queryset = Member.objects.all()
-    serializer_class = MemberSerializer
+
+    def get(self, request, pk):
+        try:
+            member = Member.objects.get(pk=pk)
+            return response.Response(MemberSerializer(member).data)
+        except Member.DoesNotExist:
+            return response.Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    def patch(self, request, pk):
+        """Only allows updating referred_by (for Promote to Root feature)."""
+        try:
+            member = Member.objects.get(pk=pk)
+        except Member.DoesNotExist:
+            return response.Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        allowed_fields = {'referred_by'}
+        data = {k: v for k, v in request.data.items() if k in allowed_fields}
+
+        if 'referred_by' in data:
+            val = data['referred_by']
+            if val is None or val == 'null' or val == '':
+                member.referred_by = None
+            else:
+                try:
+                    member.referred_by = Member.objects.get(pk=val)
+                except Member.DoesNotExist:
+                    return response.Response({"error": "Referrer not found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        member.save()
+        return response.Response(MemberSerializer(member).data)
 
 class VoterRecordPagination(PageNumberPagination):
     page_size = 50
