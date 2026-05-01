@@ -39,7 +39,8 @@ function Pagination({ page, totalPages, onPrev, onNext, totalItems, pageSize }) 
 }
 
 export default function Reports({ memberId }) {
-  const [members, setMembers] = useState([]);
+  const [reportMode, setReportMode] = useState('all'); // all | verified | unverified
+  const [totalMembers, setTotalMembers] = useState(0);
   const [wardSummary, setWardSummary] = useState([]);
   const [pollingSummary, setPollingSummary] = useState([]);
   const [pollingSearch, setPollingSearch] = useState("");
@@ -52,45 +53,19 @@ export default function Reports({ memberId }) {
   const [wardListPage, setWardListPage] = useState(0);
   const [pollingPage, setPollingPage] = useState(0);
 
-  // Reset polling page when search changes
+  // Reset pages when mode or search changes
+  useEffect(() => { setPollingPage(0); setWardChartPage(0); setWardListPage(0); }, [reportMode]);
   useEffect(() => { setPollingPage(0); }, [pollingSearch]);
 
   const fetchReportData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: members, error } = await api.getMembers(
-        memberId ? { referred_by: memberId } : {}
-      );
+      const { data: statsData, error: statsError } = await api.getReportStats(memberId, reportMode);
 
-      if (!error && members) {
-        // members might be paginated, for reports we usually want a larger set or use a specific reports endpoint.
-        // For now, mirroring the client-side aggregation.
-        const memberList = Array.isArray(members) ? members : members.results;
-        setMembers(memberList);
-
-        const wardMap = memberList.reduce((acc, member) => {
-          const ward = member.ward || "Unknown";
-          acc[ward] = (acc[ward] || 0) + 1;
-          return acc;
-        }, {});
-
-        setWardSummary(
-          Object.entries(wardMap)
-            .map(([ward, count]) => ({ ward, count }))
-            .sort((a, b) => b.count - a.count)
-        );
-
-        const pollingMap = memberList.reduce((acc, member) => {
-          const station = member.polling_station || "Unknown";
-          const ward = member.ward || "Unknown";
-          const key = station;
-          if (!acc[key]) acc[key] = { station, ward, count: 0 };
-          acc[key].count += 1;
-          return acc;
-        }, {});
-        setPollingSummary(
-          Object.values(pollingMap).sort((a, b) => b.count - a.count)
-        );
+      if (!statsError && statsData) {
+        setWardSummary(statsData.ward_summary || []);
+        setPollingSummary(statsData.polling_summary || []);
+        setTotalMembers(statsData.total || 0);
 
         if (memberId) {
           const { data: insights } = await api.getInsights(memberId);
@@ -108,7 +83,7 @@ export default function Reports({ memberId }) {
       }
     } catch (err) {
       console.error("Reports fetch error:", err);
-      setMembers([]);
+      setTotalMembers(0);
       setWardSummary([]);
       setPollingSummary([]);
       setRootCount(0);
@@ -116,7 +91,7 @@ export default function Reports({ memberId }) {
     } finally {
       setLoading(false);
     }
-  }, [memberId]);
+  }, [memberId, reportMode]);
 
   useEffect(() => {
     fetchReportData();
@@ -166,10 +141,34 @@ export default function Reports({ memberId }) {
           </div>
         </div>
 
+        {/* ── Three-Mode Intelligence Toggle ── */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-2 flex gap-2">
+          {[
+            { id: 'all', label: '📋 All Registrants', desc: 'Self-reported location' },
+            { id: 'verified', label: '✅ IEBC Verified Voters', desc: 'Official IEBC ward names' },
+            { id: 'unverified', label: '🆕 Unverified / New', desc: 'Not in 2022 register' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setReportMode(tab.id)}
+              className={`flex-1 text-center py-3 px-4 rounded-2xl transition-all ${
+                reportMode === tab.id
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <p className="text-xs font-black uppercase tracking-wider">{tab.label}</p>
+              <p className={`text-[9px] font-bold mt-0.5 ${
+                reportMode === tab.id ? 'text-slate-300' : 'text-slate-400'
+              }`}>{tab.desc}</p>
+            </button>
+          ))}
+        </div>
+
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
             <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 mb-3">Total Registrations</p>
-            <p className="text-4xl font-black text-slate-900">{members.length}</p>
+            <p className="text-4xl font-black text-slate-900">{totalMembers}</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
             <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400 mb-3">{memberId ? "Direct Recruits" : "Root Mobilizers"}</p>
@@ -187,7 +186,9 @@ export default function Reports({ memberId }) {
             <div className="flex items-center justify-between gap-4 mb-6">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Most Active Wards</p>
-                <h2 className="text-xl font-black text-slate-900">Registration by Ward</h2>
+                <h2 className="text-xl font-black text-slate-900">
+                  {reportMode === 'verified' ? 'IEBC Official Ward Breakdown' : reportMode === 'unverified' ? 'Unverified Members by Ward' : 'All Registrants by Ward'}
+                </h2>
               </div>
               <BarChart3 className="w-6 h-6 text-slate-600" />
             </div>
@@ -199,7 +200,7 @@ export default function Reports({ memberId }) {
               <>
                 <div className="space-y-3">
                   {wardChartSlice.map((item) => {
-                    const pct = members.length > 0 ? Math.round((item.count / members.length) * 100) : 0;
+                    const pct = totalMembers > 0 ? Math.round((item.count / totalMembers) * 100) : 0;
                     return (
                       <div key={item.ward} className="p-4 bg-slate-50 rounded-3xl border border-slate-200">
                         <div className="flex items-center justify-between mb-2">
@@ -270,7 +271,7 @@ export default function Reports({ memberId }) {
               <>
                 {wardListSlice.map((item, idx) => {
                   const globalIdx = wardListPage * WARD_LIST_PAGE_SIZE + idx;
-                  const pct = members.length > 0 ? Math.round((item.count / members.length) * 100) : 0;
+                  const pct = totalMembers > 0 ? Math.round((item.count / totalMembers) * 100) : 0;
                   return (
                     <div key={item.ward} className="flex items-center gap-4 p-4 rounded-3xl bg-slate-50 border border-slate-200">
                       <span className="text-[10px] font-black text-slate-400 w-5 shrink-0">#{globalIdx + 1}</span>
@@ -331,7 +332,7 @@ export default function Reports({ memberId }) {
               <>
                 {pollingSlice.map((item, idx) => {
                   const globalIdx = pollingPage * POLLING_PAGE_SIZE + idx;
-                  const pct = members.length > 0 ? Math.round((item.count / members.length) * 100) : 0;
+                  const pct = totalMembers > 0 ? Math.round((item.count / totalMembers) * 100) : 0;
                   return (
                     <div key={item.station} className="flex items-center gap-4 p-4 rounded-3xl bg-slate-50 border border-slate-200">
                       <span className="text-[10px] font-black text-slate-400 w-5 shrink-0">#{globalIdx + 1}</span>

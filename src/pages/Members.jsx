@@ -13,13 +13,22 @@ import { api } from "../lib/api";
 export default function Members({ memberId, isAdmin = false }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedMember, setSelectedMember] = useState(null);
+  
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
-  const fetchMembers = useCallback(async () => {
-    setLoading(true);
+  const fetchMembersPage = useCallback(async (pageIdx) => {
+    if (pageIdx === 0) setLoading(true);
+    else setLoadingMore(true);
+
     try {
-      const { data, error } = await api.getMembers({ referred_by: memberId });
+      const { data, error } = await api.getMembers({ 
+        referred_by: memberId,
+        page: pageIdx + 1
+      });
 
       if (error) {
         if (error.message?.includes('401') || error.message?.includes('403')) {
@@ -30,21 +39,26 @@ export default function Members({ memberId, isAdmin = false }) {
       }
 
       const list = data.results || [];
-      setMembers(list);
+      if (pageIdx === 0) setMembers(list);
+      else setMembers(prev => [...prev, ...list]);
+      
+      setHasMore(!!data.next);
+      setPage(pageIdx);
     } catch (err) {
       console.error("Members fetch failed:", err);
       toast.error("Unable to load network members right now.");
-      setMembers([]);
+      if (pageIdx === 0) setMembers([]);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [memberId]);
 
   useEffect(() => {
     if (memberId) {
-      fetchMembers();
+      fetchMembersPage(0);
     }
-  }, [memberId, fetchMembers]);
+  }, [memberId, fetchMembersPage]);
 
   const filtered = members.filter(
     (member) =>
@@ -318,6 +332,18 @@ export default function Members({ memberId, isAdmin = false }) {
                 ))
               )}
             </div>
+
+            {hasMore && (
+              <div className="flex justify-center mt-8 pb-8">
+                <button
+                  onClick={() => fetchMembersPage(page + 1)}
+                  disabled={loadingMore}
+                  className="px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-[0.3em] border border-slate-200 bg-white hover:bg-slate-50 transition disabled:opacity-50"
+                >
+                  {loadingMore ? "Loading..." : "Load More Recruits"}
+                </button>
+              </div>
+            )}
           </div>
         </section>
       </div>

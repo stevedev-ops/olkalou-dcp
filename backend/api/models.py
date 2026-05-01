@@ -28,6 +28,9 @@ class Member(AbstractBaseUser, PermissionsMixin):
     yob = models.IntegerField(null=True, blank=True)
     ward = models.CharField(max_length=255, blank=True, null=True)
     polling_station = models.CharField(max_length=255, blank=True, null=True)
+    # Official IEBC names — auto-populated from voter register on match
+    official_ward = models.CharField(max_length=255, blank=True, null=True)
+    official_polling_station = models.CharField(max_length=255, blank=True, null=True)
     referred_by = models.ForeignKey(
         'self', 
         on_delete=models.SET_NULL, 

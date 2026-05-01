@@ -92,41 +92,42 @@ class MemberRegisterView(views.APIView):
             member = serializer.save()
             
             # Check Voter Register with enhanced matching
-            is_verified = VoterRecord.objects.filter(
+            matched_record = None
+
+            # Direct match first
+            direct = VoterRecord.objects.filter(
                 Q(id_number=member.national_id) | Q(phone_number=member.phone)
-            ).exists()
-            
-            if not is_verified:
-                # Try masked ID matching (e.g. 3******5)
-                # We check for records where the ID matches the pattern of the provided ID
+            ).first()
+            if direct:
+                matched_record = direct
+
+            if not matched_record:
+                # Try masked ID matching
                 id_len = len(member.national_id)
                 if id_len >= 5:
                     id_pattern = f"{member.national_id[0]}{'*' * (id_len - 2)}{member.national_id[-1]}"
-                    
-                    # Fuzzy name matching: Split into words and check if at least 2 parts match
                     name_parts = [p for p in member.full_name.upper().split(' ') if len(p) > 2]
-                    
                     potential_matches = list(VoterRecord.objects.filter(id_number=id_pattern))
-                    
-                    # Pass 1: Try to match at least 2 name parts for high confidence
+
+                    # Pass 1: 2+ name parts
                     for record in potential_matches:
                         record_name_upper = record.full_name.upper()
-                        match_count = sum(1 for part in name_parts if part in record_name_upper)
-                        if match_count >= 2:
-                            is_verified = True
+                        if sum(1 for part in name_parts if part in record_name_upper) >= 2:
+                            matched_record = record
                             break
-                    
-                    # Pass 2: Fallback to 1 name part if no high-confidence match found
-                    if not is_verified:
+
+                    # Pass 2: 1 name part fallback
+                    if not matched_record:
                         for record in potential_matches:
                             record_name_upper = record.full_name.upper()
-                            match_count = sum(1 for part in name_parts if part in record_name_upper)
-                            if match_count >= 1:
-                                is_verified = True
+                            if sum(1 for part in name_parts if part in record_name_upper) >= 1:
+                                matched_record = record
                                 break
 
-            if is_verified:
+            if matched_record:
                 member.is_voter_verified = True
+                member.official_ward = matched_record.ward or ''
+                member.official_polling_station = matched_record.polling_station or ''
                 member.save()
 
             token, _ = Token.objects.get_or_create(user=member)
@@ -262,6 +263,49 @@ class VoterRecordListView(generics.ListAPIView):
             queryset = queryset.filter(ward__icontains=ward)
             
         return queryset
+
+class ReportStatsView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        member_id = request.query_params.get('member_id')
+        mode = request.query_params.get('mode', 'all')  # all | verified | unverified
+
+        base_qs = Member.objects.filter(is_admin=False, is_staff=False)
+        if member_id:
+            base_qs = base_qs.filter(referred_by_id=member_id)
+
+        if mode == 'verified':
+            queryset = base_qs.filter(is_voter_verified=True)
+            ward_field = 'official_ward'
+            station_field = 'official_polling_station'
+        elif mode == 'unverified':
+            queryset = base_qs.filter(is_voter_verified=False)
+            ward_field = 'ward'
+            station_field = 'polling_station'
+        else:  # all
+            queryset = base_qs
+            ward_field = 'ward'
+            station_field = 'polling_station'
+
+        ward_summary = queryset.values(ward_field).annotate(count=Count('id')).order_by('-count')
+        polling_summary = queryset.values(station_field, ward_field).annotate(count=Count('id')).order_by('-count')
+
+        ward_res = [{"ward": item[ward_field] or "Unknown", "count": item['count']} for item in ward_summary]
+        polling_res = [
+            {
+                "station": item[station_field] or "Unknown",
+                "ward": item[ward_field] or "Unknown",
+                "count": item['count']
+            }
+            for item in polling_summary
+        ]
+
+        return response.Response({
+            "ward_summary": ward_res,
+            "polling_summary": polling_res,
+            "total": queryset.count(),
+            "mode": mode,
+        })
 
 class SystemStatsView(views.APIView):
     permission_classes = [IsAdminUser]

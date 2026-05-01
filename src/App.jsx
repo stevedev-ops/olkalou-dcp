@@ -121,7 +121,7 @@ function App() {
       );
     }
 
-    return <Admin />;
+    return <Admin onLogout={handleLogout} />;
   };
 
   return (

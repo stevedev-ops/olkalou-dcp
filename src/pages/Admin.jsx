@@ -819,13 +819,26 @@ export default function Admin({ onLogout }) {
                 <div className="divide-y divide-slate-100 overflow-y-auto flex-1 custom-scrollbar">
                   {voterRecords.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center px-6">
-                      <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                        <Database size={24} className="text-slate-400" />
+                      <div className="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4">
+                        <Database size={24} className="text-amber-500" />
                       </div>
-                      <p className="font-black text-slate-700 text-sm uppercase tracking-widest">No Voter Records Found</p>
-                      <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wider">
-                        {voterSearch ? `No match for "${voterSearch}"` : "The 2022 database is currently empty or loading."}
-                      </p>
+                      <p className="font-black text-slate-900 text-lg uppercase tracking-tight mb-2">No Voter Records Found</p>
+                      
+                      {!voterSearch && !voterWardFilter ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 max-w-md mt-4">
+                          <p className="text-sm text-slate-600 mb-3 font-bold">
+                            The 2022 Official Database has not been loaded into this environment.
+                          </p>
+                          <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-3 py-2 font-mono text-left">
+                            <span className="text-dcp-green font-black"># Run this on your server</span><br/>
+                            python manage.py import_voter_register
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-500 mt-2">
+                          No match found for your search filters.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-100">

@@ -64,6 +64,13 @@ export const api = {
 
   getStats: () => 
     request('/stats'),
+
+  getReportStats: (memberId, mode = 'all') => {
+    const params = new URLSearchParams();
+    if (memberId) params.set('member_id', memberId);
+    params.set('mode', mode);
+    return request(`/stats/reports?${params.toString()}`);
+  },
   
   getInvite: (id) =>
     request(`/invites/${id}`),
