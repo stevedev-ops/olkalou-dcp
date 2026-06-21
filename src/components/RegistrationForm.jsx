@@ -1,13 +1,31 @@
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 void motion;
-import { User, Phone, CreditCard, MapPin, ShieldCheck, Mail } from "lucide-react";
+import { User, Phone, CreditCard, MapPin, ShieldCheck, Mail, WifiOff } from "lucide-react";
 import { api } from "../lib/api";
 import { wardsWithCenters } from "../lib/pollingCenters";
+
+// ─── Offline Queue Helpers ──────────────────────────────────────────────────
+const QUEUE_KEY = 'dcp_offline_queue';
+
+export function getOfflineQueue() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+  catch { return []; }
+}
+
+export function saveToOfflineQueue(payload) {
+  const queue = getOfflineQueue();
+  queue.push({ ...payload, _queued_at: Date.now() });
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+}
+
+export function clearOfflineQueue() {
+  localStorage.removeItem(QUEUE_KEY);
+}
 
 const schema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
@@ -25,15 +43,25 @@ const schema = z.object({
   consent: z.boolean().refine((val) => val === true, "You must consent to join"),
 });
 
-export default function RegistrationForm({ referrerId, inviteToken, onSuccess, isAdmin }) {
-  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm({
+export default function RegistrationForm({ referrerId, inviteToken, onSuccess, isAdmin, initialData }) {
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
       phone: "+254",
       consent: false,
       email: "",
+      ...initialData,
     }
   });
+
+  // Pre-fill form fields when initialData changes (voter lookup selection)
+  useEffect(() => {
+    if (!initialData) return;
+    Object.entries(initialData).forEach(([key, val]) => {
+      if (val) setValue(key, val, { shouldValidate: false });
+    });
+  }, [initialData, setValue]);
+
   const selectedWard = watch("ward");
   const currentCenters = useMemo(() => {
     const matched = wardsWithCenters.find((ward) => ward.name === selectedWard);
@@ -63,6 +91,18 @@ export default function RegistrationForm({ referrerId, inviteToken, onSuccess, i
         throw new Error(error.error || error.message || "Registration failed.");
       }
 
+      // ─── Offline: save to queue, notify user ──────────────────────────────
+      if (res?.offline) {
+        saveToOfflineQueue({ ...memberPayload, invite_token: inviteToken });
+        toast.success(
+          `📶 Saved Offline — ${fullName} will sync when internet returns!`,
+          { duration: 5000 }
+        );
+        // Still call onSuccess with a synthetic member object so the UI advances
+        onSuccess({ member: memberPayload, token: null, offline: true });
+        return;
+      }
+
       toast.success("Registration Successful!");
       onSuccess(res);
     } catch (error) {
@@ -84,6 +124,22 @@ export default function RegistrationForm({ referrerId, inviteToken, onSuccess, i
           </div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">Member Enrollment</h2>
           <p className="text-slate-500 font-medium text-sm">Official membership registration for Democracy for Citizens Party.</p>
+          {!navigator.onLine && (
+            <div className="mt-3 flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+              <WifiOff className="w-4 h-4 text-amber-500 shrink-0" />
+              <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">
+                Offline mode — Registration will be saved locally
+              </p>
+            </div>
+          )}
+          {initialData && (
+            <div className="mt-3 flex items-center gap-2 px-4 py-2 bg-dcp-green/10 border border-dcp-green/20 rounded-xl">
+              <ShieldCheck className="w-4 h-4 text-dcp-green shrink-0" />
+              <p className="text-[10px] font-black text-dcp-green uppercase tracking-widest">
+                Pre-filled from Voter Register
+              </p>
+            </div>
+          )}
         </header>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -216,7 +272,7 @@ export default function RegistrationForm({ referrerId, inviteToken, onSuccess, i
               className="mt-1 w-5 h-5 accent-dcp-green cursor-pointer"
             />
             <label htmlFor="consent" className="text-[11px] leading-relaxed text-slate-600 cursor-pointer select-none">
-              I confirm I wish to be a member of the <span className="text-slate-900 font-bold">Democracy for Citizens Party (DCP)</span> and authorize Hon. Said Karani's team to contact me regarding official party activities and mobilization.
+              I confirm I wish to be a member of the <span className="text-slate-900 font-bold">Democracy for Citizens Party (DCP)</span> and authorize the party to contact me via phone or email regarding official party activities and mobilization in Ol Kalou.
             </label>
           </div>
           {errors.consent && <p className="text-red-500 text-[10px] mt-1.5 ml-1 font-bold">{errors.consent.message}</p>}

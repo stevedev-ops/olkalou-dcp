@@ -8,6 +8,17 @@ import Reports from './pages/Reports';
 import Admin from './pages/Admin';
 import Enrollment from './pages/Enrollment';
 import Login from './pages/Login';
+import PollingCoverage from './pages/PollingCoverage';
+import Leaderboard from './pages/Leaderboard';
+import Gotv from './pages/Gotv';
+import Canvass from './pages/Canvass';
+import Transport from './pages/Transport';
+import PollingAgents from './pages/PollingAgents';
+import Pvt from './pages/Pvt';
+import SmsExport from './pages/SmsExport';
+import ContactMatcher from './pages/ContactMatcher';
+import Incidents from './pages/Incidents';
+import PhoneBank from './pages/PhoneBank';
 import { api } from "./lib/api";
 
 function App() {
@@ -144,7 +155,18 @@ function App() {
               <NavLink to="/dashboard" className={({ isActive }) => `rounded-2xl px-4 py-2 text-xs font-bold uppercase tracking-[0.3em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Dashboard</NavLink>
               <NavLink to="/members" className={({ isActive }) => `rounded-2xl px-4 py-2 text-xs font-bold uppercase tracking-[0.3em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Members</NavLink>
               <NavLink to="/reports" className={({ isActive }) => `rounded-2xl px-4 py-2 text-xs font-bold uppercase tracking-[0.3em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Reports</NavLink>
-              <NavLink to="/enroll" className={({ isActive }) => `rounded-2xl px-4 py-2 text-xs font-bold uppercase tracking-[0.3em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Enroll Member</NavLink>
+              <NavLink to="/coverage" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Coverage</NavLink>
+              <NavLink to="/canvass" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Panna</NavLink>
+              <NavLink to="/transport" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-amber-500 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Boda</NavLink>
+              <NavLink to="/agents" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Agents</NavLink>
+              <NavLink to="/tally" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>PVT</NavLink>
+              <NavLink to="/incidents" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-red-500 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Alerts</NavLink>
+              <NavLink to="/phonebank" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Calls</NavLink>
+              <NavLink to="/matcher" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Match</NavLink>
+              <NavLink to="/sms" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>SMS</NavLink>
+              <NavLink to="/leaderboard" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>🏆</NavLink>
+              <NavLink to="/gotv" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-red-500 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>📍 GOTV</NavLink>
+              <NavLink to="/enroll" className={({ isActive }) => `rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-[0.2em] transition ${isActive ? 'bg-dcp-green text-slate-950' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>Enroll</NavLink>
               <button
                 onClick={handleLogout}
                 className="rounded-2xl px-4 py-2 text-xs font-bold uppercase tracking-[0.3em] bg-slate-100 text-slate-950 hover:bg-slate-200 transition"
@@ -171,6 +193,17 @@ function App() {
           <Route path="/members" element={authed(<Members memberId={memberId} isAdmin={false} />)} />
           <Route path="/reports" element={authed(<Reports memberId={memberId} />)} />
           <Route path="/enroll" element={authed(<Enrollment memberId={memberId} />)} />
+          <Route path="/coverage" element={authed(<PollingCoverage />)} />
+          <Route path="/canvass" element={authed(<Canvass memberId={memberId} />)} />
+          <Route path="/transport" element={authed(<Transport memberId={memberId} />)} />
+          <Route path="/agents" element={authed(<PollingAgents />)} />
+          <Route path="/tally" element={authed(<Pvt memberId={memberId} />)} />
+          <Route path="/incidents" element={authed(<Incidents />)} />
+          <Route path="/phonebank" element={authed(<PhoneBank />)} />
+          <Route path="/matcher" element={authed(<ContactMatcher />)} />
+          <Route path="/sms" element={authed(<SmsExport />)} />
+          <Route path="/leaderboard" element={authed(<Leaderboard memberId={memberId} />)} />
+          <Route path="/gotv" element={authed(<Gotv memberId={memberId} />)} />
           <Route path="/admin" element={renderAdminRoute()} />
         </Routes>
       </main>
@@ -179,7 +212,7 @@ function App() {
         <footer className="relative z-10 py-12 border-t border-white/5 bg-black/40 backdrop-blur-sm text-center mt-auto">
           <div className="max-w-4xl mx-auto px-6 space-y-4">
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em]">&copy; 2026 Democracy for Citizens Party (DCP)</p>
-            <p className="text-xs text-gray-600 max-w-lg mx-auto leading-relaxed">Authorized by Hon. Said Karani. Building a movement for accountability in Embakasi and across Kenya.</p>
+            <p className="text-xs text-gray-600 max-w-lg mx-auto leading-relaxed">Building a movement for accountability in Ol Kalou and across Kenya.</p>
             <div className="flex justify-center gap-6 pt-4">
               <a href="#" className="text-[10px] font-bold text-gray-500 hover:text-dcp-green transition-colors uppercase tracking-widest">Privacy</a>
               <a href="#" className="text-[10px] font-bold text-gray-500 hover:text-dcp-green transition-colors uppercase tracking-widest">Terms</a>

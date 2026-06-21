@@ -1,7 +1,7 @@
 from rest_framework import status, views, response, generics
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Count, Q
-from .models import Member, Invite, VoterRecord
+from .models import Member, Invite, VoterRecord, CanvassAssignment, TransportRequest, PollingAgent, TallyRecord, IncidentReport, PhoneBankTarget, CallRecord
 from .serializers import MemberSerializer, InviteSerializer, VoterRecordSerializer
 
 from rest_framework.authtoken.models import Token
@@ -384,3 +384,600 @@ class InviteDetailView(generics.RetrieveAPIView):
     queryset = Invite.objects.all()
     serializer_class = InviteSerializer
     lookup_field = 'id'
+
+class VoterLookupView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get('q', '').strip()
+        if not query:
+            return response.Response([])
+
+        # Check if query is numeric (ID number search)
+        if query.isdigit():
+            id_len = len(query)
+            if id_len < 5:
+                return response.Response([])
+            id_pattern = f"{query[0]}{'*' * (id_len - 2)}{query[-1]}"
+            queryset = VoterRecord.objects.filter(id_number=id_pattern)[:15]
+        else:
+            # Name-based search (match all name parts of length >= 2)
+            name_parts = [p for p in query.upper().split(' ') if len(p) >= 2]
+            if not name_parts:
+                return response.Response([])
+            
+            queryset = VoterRecord.objects.all()
+            for part in name_parts:
+                queryset = queryset.filter(full_name__icontains=part)
+            
+            queryset = queryset[:15]
+
+        serializer = VoterRecordSerializer(queryset, many=True)
+        return response.Response(serializer.data)
+
+
+# ─── Polling Station Coverage ────────────────────────────────────────────────
+class PollingCoverageView(views.APIView):
+    """
+    Returns DCP member count per ward and polling station,
+    mapped against the known 142-station Ol Kalou register.
+    Accessible to all authenticated members.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        base = Member.objects.filter(is_admin=False, is_staff=False)
+
+        # Ward-level summary
+        ward_summary = (
+            base.values('ward')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+
+        # Polling station breakdown (both self-reported and IEBC-verified)
+        station_all = (
+            base.values('polling_station', 'ward')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+        station_verified = (
+            base.filter(is_voter_verified=True)
+            .values('official_polling_station', 'official_ward')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+
+        return response.Response({
+            'total': base.count(),
+            'verified': base.filter(is_voter_verified=True).count(),
+            'ward_summary': [
+                {'ward': r['ward'] or 'Unknown', 'count': r['count']}
+                for r in ward_summary
+            ],
+            'station_all': [
+                {
+                    'station': r['polling_station'] or 'Unknown',
+                    'ward': r['ward'] or 'Unknown',
+                    'count': r['count'],
+                }
+                for r in station_all
+            ],
+            'station_verified': [
+                {
+                    'station': r['official_polling_station'] or 'Unknown',
+                    'ward': r['official_ward'] or 'Unknown',
+                    'count': r['count'],
+                }
+                for r in station_verified
+            ],
+        })
+
+
+# ─── Recruiter Leaderboard ───────────────────────────────────────────────────
+class LeaderboardView(views.APIView):
+    """
+    Returns top 20 mobilizers by direct recruits and ward-level totals.
+    Accessible to all authenticated members.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Top mobilizers (direct invites, excluding admins/staff)
+        top_members = (
+            Member.objects
+            .filter(is_admin=False, is_staff=False)
+            .annotate(recruits_total=Count('recruits'))
+            .order_by('-recruits_total')[:20]
+        )
+
+        # Ward totals for ward leaderboard
+        ward_totals = (
+            Member.objects
+            .filter(is_admin=False, is_staff=False)
+            .values('ward')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:10]
+        )
+
+        return response.Response({
+            'top_mobilizers': [
+                {
+                    'rank': idx + 1,
+                    'id': m.id,
+                    'full_name': m.full_name,
+                    'ward': m.ward or 'Unknown',
+                    'polling_station': m.polling_station or 'Unknown',
+                    'direct_recruits': m.recruits_total,
+                    'is_root': m.referred_by_id is None,
+                }
+                for idx, m in enumerate(top_members)
+            ],
+            'ward_totals': [
+                {'ward': r['ward'] or 'Unknown', 'count': r['count']}
+                for r in ward_totals
+            ],
+        })
+
+
+# ─── GOTV Election Day Strike-off ────────────────────────────────────────────
+class GotvListView(views.APIView):
+    """
+    Admin-only: Returns DCP members at a given polling station
+    for the election-day strike-off tool.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        station = request.query_params.get('station', '').strip()
+        ward    = request.query_params.get('ward', '').strip()
+
+        qs = Member.objects.filter(is_admin=False, is_staff=False)
+        if station:
+            qs = qs.filter(
+                Q(polling_station__icontains=station) |
+                Q(official_polling_station__icontains=station)
+            )
+        if ward:
+            qs = qs.filter(
+                Q(ward__icontains=ward) |
+                Q(official_ward__icontains=ward)
+            )
+
+        return response.Response([
+            {
+                'id': m.id,
+                'full_name': m.full_name,
+                'ward': m.official_ward or m.ward or 'Unknown',
+                'polling_station': m.official_polling_station or m.polling_station or 'Unknown',
+                'has_voted': m.has_voted,
+                'is_voter_verified': m.is_voter_verified,
+            }
+            for m in qs.order_by('full_name')
+        ])
+
+
+class GotvMarkVotedView(views.APIView):
+    """
+    Authenticated agents mark a DCP supporter as voted.
+    PATCH /api/gotv/<pk>/voted
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        try:
+            member = Member.objects.get(pk=pk, is_admin=False, is_staff=False)
+        except Member.DoesNotExist:
+            return response.Response({'error': 'Member not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        member.has_voted = not member.has_voted   # Toggle
+        member.save(update_fields=['has_voted'])
+        return response.Response({
+            'id': member.id,
+            'full_name': member.full_name,
+            'has_voted': member.has_voted,
+        })
+
+
+import datetime
+
+# ─── Panna Pramukh: Canvass Assignments ──────────────────────────────────────
+class CanvassListView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = CanvassAssignment.objects.select_related('mobilizer').all()
+        member_id = request.query_params.get('member')
+        if member_id:
+            qs = qs.filter(mobilizer_id=member_id)
+        return response.Response([
+            {
+                'id': a.id,
+                'mobilizer_id': a.mobilizer_id,
+                'mobilizer_name': a.mobilizer.full_name,
+                'ward': a.ward,
+                'polling_station': a.polling_station or '',
+                'target_households': a.target_households,
+                'notes': a.notes,
+                'is_completed': a.is_completed,
+                'assigned_at': a.assigned_at,
+            }
+            for a in qs.order_by('-assigned_at')
+        ])
+
+    def post(self, request):
+        d = request.data
+        try:
+            mob = Member.objects.get(pk=d['mobilizer_id'])
+        except Member.DoesNotExist:
+            return response.Response({'error': 'Member not found'}, status=status.HTTP_404_NOT_FOUND)
+        a = CanvassAssignment.objects.create(
+            mobilizer=mob,
+            ward=d.get('ward', ''),
+            polling_station=d.get('polling_station', ''),
+            target_households=int(d.get('target_households', 50)),
+            notes=d.get('notes', ''),
+        )
+        return response.Response({'id': a.id, 'message': 'Assignment created'}, status=status.HTTP_201_CREATED)
+
+
+class CanvassDetailView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        try:
+            a = CanvassAssignment.objects.get(pk=pk)
+        except CanvassAssignment.DoesNotExist:
+            return response.Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        a.is_completed = not a.is_completed
+        a.save(update_fields=['is_completed'])
+        return response.Response({'id': a.id, 'is_completed': a.is_completed})
+
+    def delete(self, request, pk):
+        try:
+            CanvassAssignment.objects.get(pk=pk).delete()
+        except CanvassAssignment.DoesNotExist:
+            pass
+        return response.Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─── Boda-Boda Transport ─────────────────────────────────────────────────────
+class TransportListView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ward = request.query_params.get('ward', '')
+        qs = TransportRequest.objects.select_related('member').all()
+        if ward:
+            qs = qs.filter(ward__icontains=ward)
+        return response.Response([
+            {
+                'id': t.id,
+                'member_id': t.member_id,
+                'member_name': t.member.full_name,
+                'phone': t.member.phone,
+                'pickup_location': t.pickup_location,
+                'ward': t.ward,
+                'polling_station': t.polling_station,
+                'rider_name': t.rider_name,
+                'status': t.status,
+                'created_at': t.created_at,
+            }
+            for t in qs.order_by('ward', 'polling_station')
+        ])
+
+    def post(self, request):
+        d = request.data
+        member = request.user
+        tr, created = TransportRequest.objects.get_or_create(
+            member=member,
+            defaults={
+                'pickup_location': d.get('pickup_location', ''),
+                'ward': d.get('ward', member.ward or ''),
+                'polling_station': d.get('polling_station', member.polling_station or ''),
+            }
+        )
+        return response.Response(
+            {'id': tr.id, 'created': created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
+
+class TransportUpdateView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        try:
+            t = TransportRequest.objects.get(pk=pk)
+        except TransportRequest.DoesNotExist:
+            return response.Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        t.status = request.data.get('status', t.status)
+        t.rider_name = request.data.get('rider_name', t.rider_name)
+        t.save(update_fields=['status', 'rider_name'])
+        return response.Response({'id': t.id, 'status': t.status, 'rider_name': t.rider_name})
+
+
+# ─── Polling Agent Deployment ─────────────────────────────────────────────────
+class AgentListView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = PollingAgent.objects.select_related('member').all()
+        return response.Response([
+            {
+                'id': a.id,
+                'member_id': a.member_id,
+                'member_name': a.member.full_name,
+                'phone': a.member.phone,
+                'ward': a.ward,
+                'polling_station': a.polling_station,
+                'checked_in': a.checked_in,
+                'check_in_time': a.check_in_time,
+                'notes': a.notes,
+            }
+            for a in qs.order_by('ward', 'polling_station')
+        ])
+
+    def post(self, request):
+        d = request.data
+        try:
+            member = Member.objects.get(pk=d['member_id'])
+        except Member.DoesNotExist:
+            return response.Response({'error': 'Member not found'}, status=status.HTTP_404_NOT_FOUND)
+        agent, created = PollingAgent.objects.get_or_create(
+            member=member,
+            polling_station=d.get('polling_station', ''),
+            defaults={
+                'ward': d.get('ward', ''),
+                'notes': d.get('notes', ''),
+            }
+        )
+        return response.Response(
+            {'id': agent.id, 'created': created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
+
+class AgentCheckInView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        try:
+            agent = PollingAgent.objects.get(pk=pk)
+        except PollingAgent.DoesNotExist:
+            return response.Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        agent.checked_in = not agent.checked_in
+        agent.check_in_time = datetime.datetime.now() if agent.checked_in else None
+        agent.save(update_fields=['checked_in', 'check_in_time'])
+        return response.Response({
+            'id': agent.id,
+            'checked_in': agent.checked_in,
+            'check_in_time': agent.check_in_time,
+        })
+
+
+# ─── PVT: Tally Records ───────────────────────────────────────────────────────
+class TallyListView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = TallyRecord.objects.select_related('submitted_by').all()
+        ward = request.query_params.get('ward')
+        if ward:
+            qs = qs.filter(ward__icontains=ward)
+
+        # Aggregate totals
+        total_dcp = sum(t.dcp_votes for t in qs)
+        total_uda = sum(t.uda_votes for t in qs)
+        total_other = sum(t.other_votes for t in qs)
+        total_cast = sum(t.total_votes_cast for t in qs)
+
+        return response.Response({
+            'summary': {
+                'stations_reported': qs.count(),
+                'dcp_total': total_dcp,
+                'uda_total': total_uda,
+                'other_total': total_other,
+                'total_cast': total_cast,
+                'dcp_pct': round((total_dcp / total_cast * 100), 1) if total_cast else 0,
+            },
+            'records': [
+                {
+                    'id': t.id,
+                    'polling_station': t.polling_station,
+                    'ward': t.ward,
+                    'dcp_votes': t.dcp_votes,
+                    'uda_votes': t.uda_votes,
+                    'other_votes': t.other_votes,
+                    'total_votes_cast': t.total_votes_cast,
+                    'registered_voters': t.registered_voters,
+                    'submitted_by': t.submitted_by.full_name if t.submitted_by else 'Unknown',
+                    'is_verified': t.is_verified,
+                    'submitted_at': t.submitted_at,
+                    'notes': t.notes,
+                }
+                for t in qs.order_by('ward', 'polling_station')
+            ]
+        })
+
+    def post(self, request):
+        d = request.data
+        member = request.user
+        tally, created = TallyRecord.objects.update_or_create(
+            polling_station=d.get('polling_station', ''),
+            submitted_by=member,
+            defaults={
+                'ward': d.get('ward', member.official_ward or member.ward or ''),
+                'dcp_votes': int(d.get('dcp_votes', 0)),
+                'uda_votes': int(d.get('uda_votes', 0)),
+                'other_votes': int(d.get('other_votes', 0)),
+                'total_votes_cast': int(d.get('total_votes_cast', 0)),
+                'registered_voters': int(d.get('registered_voters', 0)),
+                'notes': d.get('notes', ''),
+            }
+        )
+        return response.Response(
+            {'id': tally.id, 'created': created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
+
+# ─── SMS Export (ward/station filtered phone list) ────────────────────────────
+class SmsExportView(views.APIView):
+    """
+    Returns phone numbers + names for bulk SMS filtered by ward/station.
+    The caller uses this list to send via Africa's Talking, Safaricom Bulk SMS, etc.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ward = request.query_params.get('ward', '')
+        station = request.query_params.get('station', '')
+        qs = Member.objects.filter(is_admin=False, is_staff=False)
+        if ward:
+            qs = qs.filter(Q(ward__icontains=ward) | Q(official_ward__icontains=ward))
+        if station:
+            qs = qs.filter(
+                Q(polling_station__icontains=station) |
+                Q(official_polling_station__icontains=station)
+            )
+        recipients = [
+            {
+                'name': m.full_name,
+                'phone': m.phone,
+                'ward': m.official_ward or m.ward,
+                'station': m.official_polling_station or m.polling_station,
+            }
+            for m in qs.order_by('ward', 'full_name')
+            if m.phone
+        ]
+        return response.Response({
+            'count': len(recipients),
+            'recipients': recipients,
+        })
+
+
+# ─── Relational Contact Matcher ───────────────────────────────────────────────
+class ContactMatcherView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get('q', '').strip()
+        if not query or len(query) < 3:
+            return response.Response([])
+        
+        # Search voter register for matching names
+        voters = VoterRecord.objects.filter(full_name__icontains=query)[:20]
+        
+        # Check which of these are already DCP members
+        results = []
+        for v in voters:
+            is_member = Member.objects.filter(national_id=v.id_number).exists() if v.id_number else False
+            results.append({
+                'id': v.id,
+                'full_name': v.full_name,
+                'id_number': v.id_number,
+                'ward': v.ward,
+                'polling_station': v.polling_station,
+                'is_member': is_member
+            })
+        return response.Response(results)
+
+
+# ─── Ushahidi-Style Incident Reporter ─────────────────────────────────────────
+class IncidentListView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = IncidentReport.objects.select_related('reporter').all().order_by('-reported_at')
+        return response.Response([
+            {
+                'id': i.id,
+                'reporter_name': i.reporter.full_name if i.reporter else 'Anonymous',
+                'incident_type': i.incident_type,
+                'ward': i.ward,
+                'polling_station': i.polling_station,
+                'description': i.description,
+                'status': i.status,
+                'reported_at': i.reported_at,
+            }
+            for i in qs
+        ])
+
+    def post(self, request):
+        d = request.data
+        incident = IncidentReport.objects.create(
+            reporter=request.user,
+            incident_type=d.get('incident_type', 'other'),
+            ward=d.get('ward', request.user.ward or ''),
+            polling_station=d.get('polling_station', request.user.polling_station or ''),
+            description=d.get('description', ''),
+        )
+        return response.Response({'id': incident.id}, status=status.HTTP_201_CREATED)
+
+class IncidentDetailView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        try:
+            incident = IncidentReport.objects.get(pk=pk)
+        except IncidentReport.DoesNotExist:
+            return response.Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        incident.status = request.data.get('status', incident.status)
+        incident.save(update_fields=['status'])
+        return response.Response({'id': incident.id, 'status': incident.status})
+
+
+# ─── Virtual Phone Banking ────────────────────────────────────────────────────
+class PhoneBankQueueView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Assign 1 pending target to this caller (or fetch one they already have pending)
+        target = PhoneBankTarget.objects.filter(status='pending', assigned_to=request.user).first()
+        if not target:
+            # Grab a new unassigned one
+            target = PhoneBankTarget.objects.filter(status='pending', assigned_to__isnull=True).first()
+            if target:
+                target.assigned_to = request.user
+                target.save(update_fields=['assigned_to'])
+        
+        if not target:
+            return response.Response({'target': None})
+            
+        return response.Response({
+            'target': {
+                'id': target.id,
+                'voter_name': target.voter_name,
+                'phone': target.phone,
+                'ward': target.ward,
+                'polling_station': target.polling_station,
+            }
+        })
+
+class CallRecordCreateView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        d = request.data
+        try:
+            target = PhoneBankTarget.objects.get(pk=d['target_id'])
+        except PhoneBankTarget.DoesNotExist:
+            return response.Response({'error': 'Target not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+        outcome = d.get('outcome')
+        CallRecord.objects.create(
+            caller=request.user,
+            target=target,
+            outcome=outcome,
+            notes=d.get('notes', '')
+        )
+        
+        # Update target status
+        if outcome == 'wrong_number':
+            target.status = 'unreachable'
+        else:
+            target.status = 'called'
+        target.save(update_fields=['status'])
+        
+        return response.Response({'success': True}, status=status.HTTP_201_CREATED)

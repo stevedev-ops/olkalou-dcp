@@ -21,15 +21,26 @@ async function request(endpoint, { body, ...customConfig } = {}) {
     config.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, config);
-  const data = await response.json();
+  if (!navigator.onLine && endpoint === '/register') {
+    return { data: { offline: true }, error: null };
+  }
 
-  if (response.ok) {
-    return { data, error: null };
-  } else {
-    // Standardize error handling
-    const errorMsg = data.detail || data.error || (typeof data === 'string' ? data : JSON.stringify(data));
-    return { data: null, error: { message: errorMsg } };
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, config);
+    const data = await response.json();
+
+    if (response.ok) {
+      return { data, error: null };
+    } else {
+      // Standardize error handling
+      const errorMsg = data.detail || data.error || (typeof data === 'string' ? data : JSON.stringify(data));
+      return { data: null, error: { message: errorMsg } };
+    }
+  } catch (err) {
+    if (endpoint === '/register') {
+      return { data: { offline: true }, error: null };
+    }
+    return { data: null, error: { message: 'Network connection failed' } };
   }
 }
 
@@ -77,4 +88,77 @@ export const api = {
   
   createInvite: (data) => 
     request('/invites', { body: data }),
+
+  lookupVoter: (query) =>
+    request(`/voter-lookup?q=${encodeURIComponent(query)}`),
+
+  getPollingCoverage: () =>
+    request('/polling-coverage'),
+
+  getLeaderboard: () =>
+    request('/leaderboard'),
+
+  getGotvList: (params = {}) => {
+    const searchParams = new URLSearchParams(params);
+    return request(`/gotv?${searchParams.toString()}`);
+  },
+
+  markVoted: (memberId) =>
+    request(`/gotv/${memberId}/voted`, { method: 'PATCH' }),
+
+  // Panna Pramukh
+  getCanvass: (memberId) =>
+    request(memberId ? `/canvass?member=${memberId}` : '/canvass'),
+  createCanvass: (data) =>
+    request('/canvass', { method: 'POST', body: JSON.stringify(data) }),
+  toggleCanvass: (id) =>
+    request(`/canvass/${id}`, { method: 'PATCH' }),
+  deleteCanvass: (id) =>
+    request(`/canvass/${id}`, { method: 'DELETE' }),
+
+  // Boda-boda Transport
+  getTransport: (ward) =>
+    request(ward ? `/transport?ward=${encodeURIComponent(ward)}` : '/transport'),
+  requestTransport: (data) =>
+    request('/transport', { method: 'POST', body: JSON.stringify(data) }),
+  updateTransport: (id, data) =>
+    request(`/transport/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Polling Agents
+  getAgents: () =>
+    request('/agents'),
+  assignAgent: (data) =>
+    request('/agents', { method: 'POST', body: JSON.stringify(data) }),
+  checkInAgent: (id) =>
+    request(`/agents/${id}/checkin`, { method: 'PATCH' }),
+
+  // PVT Tally
+  getTallies: (ward) =>
+    request(ward ? `/tally?ward=${encodeURIComponent(ward)}` : '/tally'),
+  submitTally: (data) =>
+    request('/tally', { method: 'POST', body: JSON.stringify(data) }),
+
+  // SMS Export
+  getSmsRecipients: (params = {}) => {
+    const q = new URLSearchParams(params);
+    return request(`/sms-export?${q.toString()}`);
+  },
+
+  // Relational Contact Matcher
+  searchContacts: (query) =>
+    request(`/contact-matcher?q=${encodeURIComponent(query)}`),
+
+  // Ushahidi-Style Incidents
+  getIncidents: () =>
+    request('/incidents'),
+  reportIncident: (data) =>
+    request('/incidents', { method: 'POST', body: data }),
+  updateIncidentStatus: (id, status) =>
+    request(`/incidents/${id}`, { method: 'PATCH', body: { status } }),
+
+  // Virtual Phone Banking
+  getPhoneBankTarget: () =>
+    request('/phone-bank/queue'),
+  logCall: (data) =>
+    request('/phone-bank/call', { method: 'POST', body: data }),
 };

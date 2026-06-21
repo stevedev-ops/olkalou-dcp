@@ -15,7 +15,7 @@ export default function Hero() {
           <img 
             src={logo} 
             alt="Democracy for Citizens Party Official Logo" 
-            className="w-48 md:w-64 object-contain pointer-events-none drop-shadow-sm mix-blend-multiply scale-[1.3] translate-y-2" 
+            className="w-48 md:w-64 object-contain pointer-events-none drop-shadow-sm scale-[1.3] translate-y-2" 
           />
         </motion.div>
 
@@ -31,7 +31,7 @@ export default function Hero() {
           </div>
           
           <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tight leading-[1.1]">
-            Build the Future of <span className="text-dcp-green">Embakasi East</span> With Us
+            Build the Future of <span className="text-dcp-green">Ol Kalou</span> With Us
           </h1>
           
           <p className="text-lg text-slate-500 font-medium leading-relaxed max-w-2xl mx-auto pt-2">

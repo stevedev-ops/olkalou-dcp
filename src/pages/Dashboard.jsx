@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, CheckCircle, Lock, Star, AlertCircle } from "lucide-react";
-import { motion } from "framer-motion";
+import { Users, CheckCircle, Lock, Star, AlertCircle, QrCode, Copy, Share2, Download, WifiOff, CloudUpload } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
+import { toast } from "sonner";
 import { api } from "../lib/api";
 import logo from "../assets/logo.png";
+import { getOfflineQueue, clearOfflineQueue } from "../components/RegistrationForm";
 
 // ─── Tier config for root members (25 slots = 5 tiers × 5) ───────────────────
 const TIERS = [
@@ -204,6 +207,7 @@ export default function Dashboard({ memberId, onLogout }) {
   const [networkDepth, setNetworkDepth] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [showQR, setShowQR] = useState(false);
   const navigate = useNavigate();
 
   const fetchMemberData = useCallback(async () => {
@@ -229,10 +233,92 @@ export default function Dashboard({ memberId, onLogout }) {
     if (memberId) fetchMemberData();
   }, [memberId, fetchMemberData]);
 
+  // ── Offline Queue Sync ───────────────────────────────────────────────────────
+  const [offlineCount, setOfflineCount] = useState(() => getOfflineQueue().length);
+  const [syncing, setSyncing] = useState(false);
+
+  const syncOfflineQueue = useCallback(async () => {
+    const queue = getOfflineQueue();
+    if (!queue.length || syncing) return;
+    setSyncing(true);
+    let successCount = 0;
+    const failed = [];
+    for (const payload of queue) {
+      const { data, error } = await api.register(payload, payload.invite_token);
+      if (!error && data && !data.offline) {
+        successCount++;
+      } else {
+        failed.push(payload);
+      }
+    }
+    // Save only failed items back to queue
+    if (failed.length === 0) {
+      clearOfflineQueue();
+    } else {
+      localStorage.setItem('dcp_offline_queue', JSON.stringify(failed));
+    }
+    setOfflineCount(failed.length);
+    setSyncing(false);
+    if (successCount > 0) {
+      toast.success(`✅ Synced ${successCount} offline recruit${successCount !== 1 ? 's' : ''} to HQ!`);
+      fetchMemberData(); // refresh stats
+    }
+  }, [syncing, fetchMemberData]);
+
+  // Auto-sync when connection is restored
+  useEffect(() => {
+    const handleOnline = () => {
+      setOfflineCount(getOfflineQueue().length);
+      syncOfflineQueue();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [syncOfflineQueue]);
+
   const isRoot = member?.referred_by === null;
   const quota = isRoot ? 25 : 5;
   const remaining = Math.max(0, quota - referralCount);
   const pct = Math.min(100, Math.round((referralCount / quota) * 100));
+
+  // Referral share link
+  const referralLink = member ? `${window.location.origin}/?ref=${member.id}` : '';
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(referralLink);
+    toast.success("Link copied to clipboard!");
+  };
+
+  const shareLink = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: 'Join DCP Ol Kalou',
+        text: `${member?.full_name} is inviting you to join the DCP Ol Kalou network. Register here:`,
+        url: referralLink,
+      });
+    } else {
+      copyLink();
+    }
+  };
+
+  const downloadQR = () => {
+    const svg = document.getElementById('member-qr-svg');
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    canvas.width = 300; canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, 300, 300);
+      ctx.drawImage(img, 0, 0, 300, 300);
+      const link = document.createElement('a');
+      link.download = `dcp-qr-${member?.full_name?.replace(/ /g, '-')}.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    };
+    img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+  };
 
   const activeTierIndex = isRoot
     ? TIERS.findIndex((_, i) => !getTierState(i, referralCount).isComplete)
@@ -282,7 +368,39 @@ export default function Dashboard({ memberId, onLogout }) {
     <div className="selection:bg-dcp-green/30">
       <div className="max-w-4xl mx-auto px-4 space-y-8">
 
-        {/* ── Welcome Hero Section (Identity at Top) ──────────────── */}
+        {/* ── Offline Sync Banner ───────────────────────────────────── */}
+        <AnimatePresence>
+          {offlineCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex items-center justify-between gap-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm"
+            >
+              <div className="flex items-center gap-3">
+                <WifiOff className="w-5 h-5 text-amber-500 shrink-0" />
+                <div>
+                  <p className="text-xs font-black text-amber-800 uppercase tracking-widest">
+                    {offlineCount} Offline Recruit{offlineCount !== 1 ? 's' : ''} Pending Upload
+                  </p>
+                  <p className="text-[10px] text-amber-600 font-bold mt-0.5">
+                    These will sync automatically when internet is available.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={syncOfflineQueue}
+                disabled={syncing || !navigator.onLine}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              >
+                <CloudUpload className="w-4 h-4" />
+                {syncing ? 'Syncing...' : 'Sync Now'}
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -325,7 +443,7 @@ export default function Dashboard({ memberId, onLogout }) {
             <div className="shrink-0 flex flex-col items-center gap-4">
               <motion.div 
                 whileHover={{ scale: 1.05 }}
-                className="w-24 h-24 md:w-32 md:h-32 rounded-3xl bg-white p-4 shadow-xl border border-slate-200 flex items-center justify-center transform -rotate-3"
+                className="w-24 h-24 md:w-32 md:h-32 rounded-3xl bg-white p-4 shadow-xl border border-slate-200 flex items-center justify-center"
               >
                 <img src={logo} alt="DCP" className="w-full h-full object-contain mix-blend-multiply" />
               </motion.div>
@@ -379,6 +497,99 @@ export default function Dashboard({ memberId, onLogout }) {
             </div>
           </motion.button>
         </section>
+
+        {/* ── QR Code Share Card ───────────────────────────────────── */}
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden"
+        >
+          <button
+            onClick={() => setShowQR(!showQR)}
+            className="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-dcp-green/10 border border-dcp-green/20 flex items-center justify-center">
+                <QrCode size={22} className="text-dcp-green" />
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Offline Sharing Tool</p>
+                <h3 className="font-black text-slate-900">My Referral QR Code</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Show or print at barazas — works without internet</p>
+              </div>
+            </div>
+            <motion.div animate={{ rotate: showQR ? 180 : 0 }} className="text-slate-400">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 11L2 5h12L8 11z"/></svg>
+            </motion.div>
+          </button>
+
+          <AnimatePresence>
+            {showQR && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="overflow-hidden border-t border-slate-100"
+              >
+                <div className="p-6 flex flex-col md:flex-row items-center gap-8">
+                  {/* QR Code */}
+                  <div className="flex flex-col items-center gap-3 shrink-0">
+                    <div className="bg-white p-4 rounded-2xl border-2 border-slate-100 shadow-inner">
+                      <QRCodeSVG
+                        id="member-qr-svg"
+                        value={referralLink}
+                        size={180}
+                        bgColor="#ffffff"
+                        fgColor="#0f172a"
+                        level="H"
+                        includeMargin={false}
+                      />
+                    </div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center">Scan to join your network</p>
+                  </div>
+
+                  {/* Info + Actions */}
+                  <div className="flex-1 space-y-4 w-full">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Your Referral Link</p>
+                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                        <p className="text-xs font-bold text-slate-700 truncate flex-1">{referralLink}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <button
+                        onClick={copyLink}
+                        className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-700 transition"
+                      >
+                        <Copy size={14} /> Copy Link
+                      </button>
+                      <button
+                        onClick={shareLink}
+                        className="flex items-center justify-center gap-2 px-4 py-3 bg-dcp-green text-white rounded-xl text-xs font-black uppercase tracking-wider hover:opacity-90 transition"
+                      >
+                        <Share2 size={14} /> Share
+                      </button>
+                      <button
+                        onClick={downloadQR}
+                        className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-50 transition"
+                      >
+                        <Download size={14} /> Download QR
+                      </button>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-1">💡 Field Tip</p>
+                      <p className="text-xs text-amber-700 leading-relaxed">
+                        Download this QR code and <strong>print it</strong> to use at barazas. Anyone with a smartphone can scan it to register — no link needed.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.section>
 
 
         {/* ── Network Stats Banner ─────────────────────────────────── */}
