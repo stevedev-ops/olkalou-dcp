@@ -41,4 +41,10 @@ urlpatterns = [
     # Virtual Phone Banking
     path('phone-bank/queue', views.PhoneBankQueueView.as_view(), name='phonebank-queue'),
     path('phone-bank/call', views.CallRecordCreateView.as_view(), name='phonebank-call'),
+    # Events & Rally Check-ins
+    path('events', views.EventListView.as_view(), name='event-list'),
+    path('events/<int:pk>', views.EventDetailView.as_view(), name='event-detail'),
+    path('events/<int:event_id>/attendance', views.EventAttendanceView.as_view(), name='event-attendance'),
+    # Emergency Broadcast
+    path('broadcasts', views.EmergencyBroadcastView.as_view(), name='emergency-broadcasts'),
 ]

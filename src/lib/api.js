@@ -18,7 +18,12 @@ async function request(endpoint, { body, ...customConfig } = {}) {
   };
 
   if (body) {
-    config.body = JSON.stringify(body);
+    if (body instanceof FormData) {
+      config.body = body;
+      delete config.headers['Content-Type'];
+    } else {
+      config.body = JSON.stringify(body);
+    }
   }
 
   if (!navigator.onLine && endpoint === '/register') {
@@ -110,7 +115,7 @@ export const api = {
   getCanvass: (memberId) =>
     request(memberId ? `/canvass?member=${memberId}` : '/canvass'),
   createCanvass: (data) =>
-    request('/canvass', { method: 'POST', body: JSON.stringify(data) }),
+    request('/canvass', { method: 'POST', body: data }),
   toggleCanvass: (id) =>
     request(`/canvass/${id}`, { method: 'PATCH' }),
   deleteCanvass: (id) =>
@@ -120,15 +125,15 @@ export const api = {
   getTransport: (ward) =>
     request(ward ? `/transport?ward=${encodeURIComponent(ward)}` : '/transport'),
   requestTransport: (data) =>
-    request('/transport', { method: 'POST', body: JSON.stringify(data) }),
+    request('/transport', { method: 'POST', body: data }),
   updateTransport: (id, data) =>
-    request(`/transport/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    request(`/transport/${id}`, { method: 'PATCH', body: data }),
 
   // Polling Agents
   getAgents: () =>
     request('/agents'),
   assignAgent: (data) =>
-    request('/agents', { method: 'POST', body: JSON.stringify(data) }),
+    request('/agents', { method: 'POST', body: data }),
   checkInAgent: (id) =>
     request(`/agents/${id}/checkin`, { method: 'PATCH' }),
 
@@ -136,7 +141,7 @@ export const api = {
   getTallies: (ward) =>
     request(ward ? `/tally?ward=${encodeURIComponent(ward)}` : '/tally'),
   submitTally: (data) =>
-    request('/tally', { method: 'POST', body: JSON.stringify(data) }),
+    request('/tally', { method: 'POST', body: data }),
 
   // SMS Export
   getSmsRecipients: (params = {}) => {
@@ -161,4 +166,22 @@ export const api = {
     request('/phone-bank/queue'),
   logCall: (data) =>
     request('/phone-bank/call', { method: 'POST', body: data }),
+
+  // Events & Rally Check-ins
+  getEvents: () =>
+    request('/events'),
+  createEvent: (data) =>
+    request('/events', { method: 'POST', body: data }),
+  getEventAttendance: (eventId) =>
+    request(`/events/${eventId}/attendance`),
+  checkInMember: (eventId, memberId) =>
+    request(`/events/${eventId}/attendance`, { method: 'POST', body: { member_id: memberId } }),
+
+  // Emergency Broadcasts
+  getBroadcast: () =>
+    request('/broadcasts'),
+  adminCreateBroadcast: (data) =>
+    request('/broadcasts', { method: 'POST', body: data }),
+  adminClearBroadcast: () =>
+    request('/broadcasts', { method: 'DELETE' }),
 };

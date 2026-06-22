@@ -14,13 +14,17 @@ const STATUS_CONFIG = {
 function RideCard({ ride, onUpdate }) {
   const [loading, setLoading] = useState(false);
   const [rider, setRider] = useState(ride.rider_name || "");
+  const [riderPhone, setRiderPhone] = useState(ride.rider_phone || "");
   const cfg = STATUS_CONFIG[ride.status] || STATUS_CONFIG.pending;
   const nextStatus = ride.status === "pending" ? "assigned" : ride.status === "assigned" ? "completed" : "pending";
 
   const handleStatusChange = async () => {
     setLoading(true);
     const updates = { status: nextStatus };
-    if (nextStatus === "assigned" && rider) updates.rider_name = rider;
+    if (nextStatus === "assigned" && rider) {
+      updates.rider_name = rider;
+      updates.rider_phone = riderPhone;
+    }
     await api.updateTransport(ride.id, updates);
     onUpdate(ride.id, updates);
     setLoading(false);
@@ -47,15 +51,20 @@ function RideCard({ ride, onUpdate }) {
         </span>
       </div>
 
-      <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-        <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pickup Point</p>
-          <p className="font-bold text-slate-700 text-sm">{ride.pickup_location}</p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+        <div className="flex items-start gap-2">
+           <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+           <div>
+             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pickup Point</p>
+             <p className="font-bold text-slate-700 text-sm">{ride.pickup_location}</p>
+           </div>
         </div>
-        <div className="ml-4">
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Destination</p>
-          <p className="font-bold text-slate-700 text-sm">{ride.polling_station || ride.ward}</p>
+        <div className="flex items-start gap-2 sm:ml-4">
+           <div className="w-4 h-4 shrink-0 sm:hidden" />
+           <div>
+             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Destination</p>
+             <p className="font-bold text-slate-700 text-sm">{ride.polling_station || ride.ward}</p>
+           </div>
         </div>
       </div>
 
@@ -64,13 +73,26 @@ function RideCard({ ride, onUpdate }) {
           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Assign Rider Name</label>
           <input value={rider} onChange={e => setRider(e.target.value)}
             placeholder="Boda rider's name"
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-dcp-green/50 transition" />
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm font-bold outline-none focus:border-dcp-green/50 transition mb-3" />
+          
+          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Assign Rider Phone</label>
+          <input value={riderPhone} onChange={e => setRiderPhone(e.target.value)}
+            placeholder="07XX XXX XXX"
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm font-bold outline-none focus:border-dcp-green/50 transition" />
         </div>
       )}
       {ride.status === "assigned" && ride.rider_name && (
-        <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
-          <Bike className="w-4 h-4 text-amber-500" />
-          Rider: <span className="text-slate-900">{ride.rider_name}</span>
+        <div className="flex flex-col gap-1 text-sm font-bold text-slate-600">
+          <div className="flex items-center gap-2">
+            <Bike className="w-4 h-4 text-amber-500" />
+            Rider: <span className="text-slate-900">{ride.rider_name}</span>
+          </div>
+          {ride.rider_phone && (
+            <div className="flex items-center gap-2">
+              <Phone className="w-4 h-4 text-amber-500" />
+              Phone: <span className="text-slate-900">{ride.rider_phone}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -88,7 +110,7 @@ function RideCard({ ride, onUpdate }) {
   );
 }
 
-export default function Transport({ memberId }) {
+export default function Transport({ memberId, isAdmin = false }) {
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [wardFilter, setWardFilter] = useState("");
@@ -98,7 +120,7 @@ export default function Transport({ memberId }) {
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await api.getTransport(wardFilter);
-    setRides(data || []);
+    setRides(data?.results || data || []);
     setLoading(false);
   }, [wardFilter]);
 
@@ -123,18 +145,18 @@ export default function Transport({ memberId }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-4xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         {/* Header */}
-        <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl">
+        <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-6 md:p-8 border border-slate-800 shadow-2xl">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(251,146,60,0.15)_0%,transparent_60%)] pointer-events-none" />
-          <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 md:gap-4">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400 mb-1">Election Day · Boda-Boda Network</p>
               <h1 className="text-3xl font-black text-white italic uppercase">Transport Coordinator</h1>
               <p className="text-slate-400 text-sm mt-1">Get every DCP voter to the polls — no one left behind</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
               <div className="grid grid-cols-3 gap-2">
                 {[{ label: "Need Ride", v: pendingCount, c: "text-red-400" }, { label: "Assigned", v: assignedCount, c: "text-amber-400" }, { label: "Done", v: doneCount, c: "text-dcp-green" }].map(s => (
                   <div key={s.label} className="bg-white/10 rounded-xl px-3 py-2 text-center border border-white/10">
@@ -144,7 +166,7 @@ export default function Transport({ memberId }) {
                 ))}
               </div>
               <button onClick={() => setShowRequest(v => !v)}
-                className="flex items-center gap-2 px-4 py-3 bg-amber-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-amber-600 transition shadow-lg">
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-amber-600 transition shadow-lg w-full sm:w-auto mt-2 sm:mt-0">
                 <Plus className="w-4 h-4" /> Need Ride
               </button>
             </div>

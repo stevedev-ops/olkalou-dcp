@@ -73,7 +73,7 @@ export default function PollingCoverage() {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-6xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         {/* Header */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -132,7 +132,8 @@ export default function PollingCoverage() {
 
             {/* Station List */}
             <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-              <div className="grid grid-cols-12 px-6 py-3 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <div className="overflow-x-auto">
+              <div className="grid grid-cols-12 px-6 py-3 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-400 min-w-[520px]">
                 <div className="col-span-1">#</div>
                 <div className="col-span-5">Polling Station</div>
                 <div className="col-span-3">Ward</div>
@@ -142,17 +143,17 @@ export default function PollingCoverage() {
               <div className="divide-y divide-slate-100">
                 {loading ? (
                   Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="px-6 py-4 animate-pulse flex gap-4">
+                    <div key={i} className="px-6 py-4 animate-pulse flex gap-4 min-w-[520px]">
                       <div className="h-3 bg-slate-200 rounded flex-1" />
                       <div className="h-3 bg-slate-200 rounded w-20" />
                     </div>
                   ))
                 ) : filtered.length === 0 ? (
-                  <div className="p-12 text-center text-slate-400 text-xs font-black uppercase tracking-widest">
+                  <div className="p-12 text-center text-slate-500 text-xs font-black uppercase tracking-widest">
                     No stations match your filter
                   </div>
                 ) : filtered.map((s, i) => (
-                  <div key={s.station} className={`grid grid-cols-12 items-center px-6 py-4 gap-2 hover:bg-slate-50 transition ${s.count === 0 ? 'bg-red-50/30' : ''}`}>
+                  <div key={s.station} className={`grid grid-cols-12 items-center px-6 py-4 gap-2 hover:bg-slate-50 transition min-w-[520px] ${s.count === 0 ? 'bg-red-50/30' : ''}`}>
                     <div className="col-span-1 text-[10px] font-black text-slate-400">#{i + 1}</div>
                     <div className="col-span-5">
                       <p className="font-black text-slate-900 text-sm truncate">{s.station}</p>
@@ -170,12 +171,13 @@ export default function PollingCoverage() {
                   </div>
                 ))}
               </div>
+              </div>
             </div>
           </>
         )}
 
         {view === 'wards' && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {wardSummary.map(w => (
               <motion.div key={w.ward} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
                 className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">

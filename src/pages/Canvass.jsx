@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import { wardsWithCenters } from "../lib/pollingCenters";
 
-export default function Canvass({ memberId }) {
+export default function Canvass({ memberId, isAdmin = false }) {
   const [assignments, setAssignments] = useState([]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +31,7 @@ export default function Canvass({ memberId }) {
       api.getCanvass(),
       api.getMembers?.() || { data: null },
     ]);
-    setAssignments(aData || []);
+    setAssignments(aData?.results || aData || []);
     setLoading(false);
   }, []);
 
@@ -71,7 +71,7 @@ export default function Canvass({ memberId }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-5xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         {/* Header */}
         <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl">

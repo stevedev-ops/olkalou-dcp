@@ -7,8 +7,9 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import logo from "../assets/logo.png";
 import { getOfflineQueue, clearOfflineQueue } from "../components/RegistrationForm";
+import { useLanguage } from "../contexts/LanguageContext";
 
-// ─── Tier config for root members (25 slots = 5 tiers × 5) ───────────────────
+// ─── Tier config for root members (10 slots = 2 tiers × 5) ───────────────────
 const TIERS = [
   {
     name: "Bronze",
@@ -31,40 +32,7 @@ const TIERS = [
     fill: "bg-slate-500",
     text: "text-slate-400",
     glow: "shadow-slate-400/20",
-  },
-  {
-    name: "Gold",
-    range: [11, 15],
-    icon: "🥇",
-    color: "#FFD700",
-    bg: "from-yellow-500/20 to-yellow-400/10",
-    border: "border-yellow-500/40",
-    fill: "bg-yellow-500",
-    text: "text-yellow-500",
-    glow: "shadow-yellow-500/20",
-  },
-  {
-    name: "Platinum",
-    range: [16, 20],
-    icon: "💎",
-    color: "#E5E4E2",
-    bg: "from-cyan-400/20 to-cyan-300/10",
-    border: "border-cyan-400/40",
-    fill: "bg-cyan-400",
-    text: "text-cyan-400",
-    glow: "shadow-cyan-400/20",
-  },
-  {
-    name: "Diamond",
-    range: [21, 25],
-    icon: "💠",
-    color: "#B9F2FF",
-    bg: "from-blue-400/20 to-blue-300/10",
-    border: "border-blue-400/40",
-    fill: "bg-blue-400",
-    text: "text-blue-400",
-    glow: "shadow-blue-500/20",
-  },
+  }
 ];
 
 function getTierState(tierIndex, referralCount) {
@@ -201,6 +169,7 @@ function SkeletonCard({ className = "" }) {
 }
 
 export default function Dashboard({ memberId, onLogout }) {
+  const { t } = useLanguage();
   const [member, setMember] = useState(null);
   const [referralCount, setReferralCount] = useState(0);
   const [networkSize, setNetworkSize] = useState(0);
@@ -208,6 +177,7 @@ export default function Dashboard({ memberId, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
   const navigate = useNavigate();
 
   const fetchMemberData = useCallback(async () => {
@@ -275,8 +245,27 @@ export default function Dashboard({ memberId, onLogout }) {
     return () => window.removeEventListener('online', handleOnline);
   }, [syncOfflineQueue]);
 
+  // PWA Install Prompt
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
+
   const isRoot = member?.referred_by === null;
-  const quota = isRoot ? 25 : 5;
+  const quota = isRoot ? 10 : 5;
   const remaining = Math.max(0, quota - referralCount);
   const pct = Math.min(100, Math.round((referralCount / quota) * 100));
 
@@ -330,7 +319,7 @@ export default function Dashboard({ memberId, onLogout }) {
   // ── Loading state ────────────────────────────────────────────────────────────
   if (loading)
     return (
-      <div className="max-w-4xl mx-auto px-4 space-y-8 pt-4">
+      <div className="w-full space-y-8 pt-4">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm animate-pulse flex items-center gap-6">
           <div className="w-24 h-12 bg-slate-200 rounded-xl" />
           <div className="space-y-2">
@@ -338,7 +327,7 @@ export default function Dashboard({ memberId, onLogout }) {
             <div className="h-5 w-32 bg-slate-200 rounded" />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
@@ -349,7 +338,7 @@ export default function Dashboard({ memberId, onLogout }) {
   // ── Error state ──────────────────────────────────────────────────────────────
   if (error)
     return (
-      <div className="max-w-4xl mx-auto px-4 pt-16 flex flex-col items-center text-center gap-4">
+      <div className="w-full pt-16 flex flex-col items-center text-center gap-4">
         <div className="w-16 h-16 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center">
           <AlertCircle size={28} className="text-red-400" />
         </div>
@@ -366,22 +355,22 @@ export default function Dashboard({ memberId, onLogout }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-4xl mx-auto px-4 space-y-8">
+      <div className="w-full space-y-8">
 
-        {/* ── Offline Sync Banner ───────────────────────────────────── */}
+        {/* ── Offline & PWA Sync Bars ────────────────────────────────── */}
         <AnimatePresence>
           {offlineCount > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
               className="flex items-center justify-between gap-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm"
             >
               <div className="flex items-center gap-3">
                 <WifiOff className="w-5 h-5 text-amber-500 shrink-0" />
                 <div>
                   <p className="text-xs font-black text-amber-800 uppercase tracking-widest">
-                    {offlineCount} Offline Recruit{offlineCount !== 1 ? 's' : ''} Pending Upload
+                    {offlineCount} {t('dash_queue')}
                   </p>
                   <p className="text-[10px] text-amber-600 font-bold mt-0.5">
                     These will sync automatically when internet is available.
@@ -394,7 +383,35 @@ export default function Dashboard({ memberId, onLogout }) {
                 className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
               >
                 <CloudUpload className="w-4 h-4" />
-                {syncing ? 'Syncing...' : 'Sync Now'}
+                {syncing ? '...' : t('dash_sync')}
+              </button>
+            </motion.div>
+          )}
+
+          {deferredPrompt && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="flex items-center justify-between gap-4 p-4 bg-dcp-green/10 border border-dcp-green/20 rounded-2xl shadow-sm mt-4"
+            >
+              <div className="flex items-center gap-3">
+                <Download className="w-5 h-5 text-dcp-green shrink-0" />
+                <div>
+                  <p className="text-xs font-black text-dcp-green uppercase tracking-widest">
+                    Install App
+                  </p>
+                  <p className="text-[10px] text-dcp-green/80 font-bold mt-0.5">
+                    Add DCP Mobilizer to your home screen for quick access.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleInstallClick}
+                className="flex items-center gap-2 px-4 py-2 bg-dcp-green text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-dcp-green/90 transition shadow-lg shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                Install Now
               </button>
             </motion.div>
           )}
@@ -451,7 +468,7 @@ export default function Dashboard({ memberId, onLogout }) {
                 onClick={onLogout}
                 className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-red-400 transition"
               >
-                Sign Out Securely
+                {t('sign_out')}
               </button>
             </div>
           </div>
@@ -471,7 +488,7 @@ export default function Dashboard({ memberId, onLogout }) {
               <Star size={80} strokeWidth={3} />
             </div>
             <p className="text-[10px] font-black uppercase tracking-[0.3em] mb-2 text-white/70">Expansion</p>
-            <h3 className="text-2xl font-black mb-3 italic uppercase">Add New Members</h3>
+            <h3 className="text-2xl font-black mb-3 italic uppercase">{t('nav_enroll')}</h3>
             <p className="text-sm text-white/80 leading-relaxed font-medium">Use your authority to register and onboard new supporters to the movement.</p>
             <div className="mt-6 flex items-center gap-2 text-xs font-black uppercase tracking-widest bg-black/10 w-fit px-4 py-2 rounded-full">
               Open Recruitment Tools →
@@ -490,7 +507,7 @@ export default function Dashboard({ memberId, onLogout }) {
               <Users size={80} strokeWidth={3} />
             </div>
             <p className="text-[10px] font-black uppercase tracking-[0.3em] mb-2 text-slate-400">Team Leadership</p>
-            <h3 className="text-2xl font-black mb-3 italic uppercase">My Recruits</h3>
+            <h3 className="text-2xl font-black mb-3 italic uppercase">{t('dash_network')}</h3>
             <p className="text-sm text-slate-500 leading-relaxed font-medium">Track your personal team performance and view registration statuses.</p>
             <div className="mt-6 flex items-center gap-2 text-xs font-black uppercase tracking-widest bg-slate-50 w-fit px-4 py-2 rounded-full border border-slate-100 group-hover:bg-slate-100 transition">
               Manage Network →
@@ -547,7 +564,7 @@ export default function Dashboard({ memberId, onLogout }) {
                         includeMargin={false}
                       />
                     </div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center">Scan to join your network</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 text-center">Scan to join your network</p>
                   </div>
 
                   {/* Info + Actions */}
@@ -593,7 +610,7 @@ export default function Dashboard({ memberId, onLogout }) {
 
 
         {/* ── Network Stats Banner ─────────────────────────────────── */}
-        <section className="grid grid-cols-2 gap-4">
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <NetworkStatCard
             label="My Direct Enrolments"
             sublabel={isRoot
@@ -735,17 +752,19 @@ export default function Dashboard({ memberId, onLogout }) {
             transition={{ delay: 0.3 }}
             className="bg-slate-900 rounded-3xl border border-slate-800 p-8 shadow-2xl"
           >
-            <div className="flex items-center gap-3 mb-6">
-              <Star className="text-dcp-green w-5 h-5" />
-              <div>
-                <h3 className="text-white font-black uppercase tracking-widest text-sm">Recruitment Tiers</h3>
-                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                  Fill each bunch of 5 to unlock the next tier
-                </p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-3 mb-6">
+              <div className="flex items-center gap-3">
+                <Star className="text-dcp-green w-5 h-5" />
+                <div>
+                  <h3 className="text-white font-black uppercase tracking-widest text-sm">Recruitment Tiers</h3>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                    Fill each bunch of 5 to unlock the next tier
+                  </p>
+                </div>
               </div>
               {activeTier && (
                 <span
-                  className="ml-auto text-xs font-black px-3 py-1 rounded-full border"
+                  className="sm:ml-auto w-fit text-xs font-black px-3 py-1 rounded-full border"
                   style={{ color: activeTier.color, borderColor: activeTier.color + "60", background: activeTier.color + "15" }}
                 >
                   {activeTier.icon} {activeTier.name} Active
@@ -753,7 +772,7 @@ export default function Dashboard({ memberId, onLogout }) {
               )}
             </div>
 
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
               {TIERS.map((tier, i) => (
                 <TierCard
                   key={tier.name}
@@ -768,7 +787,7 @@ export default function Dashboard({ memberId, onLogout }) {
             <div className="mt-6 pt-6 border-t border-slate-800">
               <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
                 <span>Overall Progress</span>
-                <span>{referralCount} / 25</span>
+                <span>{referralCount} / 10</span>
               </div>
               <div className="relative h-3 bg-slate-800 rounded-full overflow-hidden">
                 {[1, 2, 3, 4].map((d) => (

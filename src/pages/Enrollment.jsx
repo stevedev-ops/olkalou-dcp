@@ -64,7 +64,7 @@ export default function Enrollment({ memberId }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-4xl mx-auto px-4 space-y-8">
+      <div className="w-full space-y-8">
 
         {/* Header Navigation */}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -130,7 +130,7 @@ export default function Enrollment({ memberId }) {
               animate="center"
               exit="exit"
               transition={{ duration: 0.25 }}
-              className="grid lg:grid-cols-5 gap-8"
+              className="grid grid-cols-1 lg:grid-cols-5 gap-8"
             >
               {/* Left side: QR & Share */}
               <div className="lg:col-span-2 space-y-6">

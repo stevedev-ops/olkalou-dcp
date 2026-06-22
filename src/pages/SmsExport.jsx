@@ -42,7 +42,7 @@ export default function SmsExport() {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-4xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(0,132,61,0.2)_0%,transparent_60%)] pointer-events-none" />

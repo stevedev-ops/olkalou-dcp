@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, CheckCircle2, Circle, Users, MapPin, Filter, Loader2, AlertTriangle } from "lucide-react";
+import { Search, CheckCircle2, Circle, Users, MapPin, Filter, Loader2, AlertTriangle, Download } from "lucide-react";
 import { api } from "../lib/api";
+import { exportToCSV } from "../lib/exportUtils";
 import { wardsWithCenters } from "../lib/pollingCenters";
 
 function VotedStatusButton({ member, onToggle }) {
@@ -35,7 +36,7 @@ function VotedStatusButton({ member, onToggle }) {
   );
 }
 
-export default function Gotv({ memberId }) {
+export default function Gotv({ memberId, isAdmin = false }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [ward, setWard] = useState("");
@@ -55,7 +56,7 @@ export default function Gotv({ memberId }) {
     if (ward) params.ward = ward;
     if (station) params.station = station;
     const { data } = await api.getGotvList(params);
-    setMembers(data || []);
+    setMembers(data?.results || data || []);
     setHasFetched(true);
     setLoading(false);
   }, [ward, station]);
@@ -82,7 +83,7 @@ export default function Gotv({ memberId }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-5xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         {/* Header */}
         <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl">
@@ -94,12 +95,18 @@ export default function Gotv({ memberId }) {
               <p className="text-slate-400 text-sm mt-1">Mark DCP supporters as voted — station by station</p>
             </div>
             {members.length > 0 && (
-              <div className="bg-white/10 border border-white/10 rounded-3xl px-6 py-4 text-center">
-                <p className="text-4xl font-black text-white">{pct}%</p>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{votedCount}/{members.length} Voted</p>
-                <div className="w-32 bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
-                  <div className="bg-dcp-green h-1.5 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
+                <div className="bg-white/10 border border-white/10 rounded-3xl px-5 py-3 text-center w-full sm:w-auto">
+                  <p className="text-4xl font-black text-white">{pct}%</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{votedCount}/{members.length} Voted</p>
+                  <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
+                    <div className="bg-dcp-green h-1.5 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                  </div>
                 </div>
+                <button onClick={() => exportToCSV(members, `GOTV_Turnout_${new Date().toISOString().split('T')[0]}`)}
+                  className="flex items-center justify-center gap-2 px-5 py-3 bg-white text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-100 transition shadow-lg w-full sm:w-auto shrink-0">
+                  <Download className="w-4 h-4" /> Export Data
+                </button>
               </div>
             )}
           </div>
@@ -158,8 +165,10 @@ export default function Gotv({ memberId }) {
             </div>
 
             <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+              {/* Table — scrollable on mobile */}
+              <div className="overflow-x-auto">
               {/* Table header */}
-              <div className="grid grid-cols-12 px-6 py-3 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <div className="grid grid-cols-12 px-6 py-3 bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-400 min-w-[480px]">
                 <div className="col-span-1">#</div>
                 <div className="col-span-5">Full Name</div>
                 <div className="col-span-3">Polling Station</div>
@@ -169,13 +178,13 @@ export default function Gotv({ memberId }) {
               <div className="divide-y divide-slate-100">
                 {loading ? (
                   Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="px-6 py-4 animate-pulse flex gap-4">
+                    <div key={i} className="px-6 py-4 animate-pulse flex gap-4 min-w-[480px]">
                       <div className="h-4 bg-slate-200 rounded flex-1" />
                       <div className="h-8 bg-slate-200 rounded w-28" />
                     </div>
                   ))
                 ) : filtered.length === 0 ? (
-                  <div className="p-12 text-center text-slate-400 text-xs font-black uppercase tracking-widest">
+                  <div className="p-12 text-center text-slate-600 text-xs font-black uppercase tracking-widest">
                     {members.length === 0 ? "No DCP members registered at this station" : "All members voted! 🎉"}
                   </div>
                 ) : (
@@ -183,7 +192,7 @@ export default function Gotv({ memberId }) {
                     {filtered.map((m, i) => (
                       <motion.div key={m.id} layout
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className={`grid grid-cols-12 items-center px-6 py-4 gap-2 transition ${m.has_voted ? "bg-dcp-green/5" : "hover:bg-slate-50"}`}
+                        className={`grid grid-cols-12 items-center px-6 py-4 gap-2 transition min-w-[480px] ${m.has_voted ? "bg-dcp-green/5" : "hover:bg-slate-50"}`}
                       >
                         <div className="col-span-1 text-[10px] font-black text-slate-400">#{i + 1}</div>
                         <div className="col-span-5">
@@ -205,6 +214,7 @@ export default function Gotv({ memberId }) {
                     ))}
                   </AnimatePresence>
                 )}
+              </div>
               </div>
 
               {/* Footer progress */}

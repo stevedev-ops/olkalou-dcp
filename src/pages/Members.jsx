@@ -9,8 +9,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { useLanguage } from "../contexts/LanguageContext";
 
 export default function Members({ memberId, isAdmin = false }) {
+  const { t } = useLanguage();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -87,7 +89,7 @@ export default function Members({ memberId, isAdmin = false }) {
         {/* Background glow */}
         <div className="absolute top-0 right-0 w-full h-full bg-[radial-gradient(circle_at_70%_30%,rgba(0,132,61,0.15)_0%,transparent_70%)] pointer-events-none" />
 
-        <div className="max-w-2xl mx-auto space-y-12 relative z-10 pt-12">
+        <div className="w-full space-y-12 relative z-10 pt-8">
           <button
             onClick={() => setSelectedMember(null)}
             className="flex items-center gap-3 text-slate-400 hover:text-white transition-colors font-black uppercase tracking-widest text-[11px]"
@@ -193,7 +195,7 @@ export default function Members({ memberId, isAdmin = false }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-6xl mx-auto px-4 space-y-8">
+      <div className="w-full space-y-8">
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
@@ -216,7 +218,7 @@ export default function Members({ memberId, isAdmin = false }) {
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search characters"
+                    placeholder={t('mem_search')}
                     className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-3xl outline-none focus:border-dcp-green focus:ring-4 focus:ring-dcp-green/10 text-sm font-bold uppercase tracking-widest"
                   />
                 </div>
@@ -288,10 +290,11 @@ export default function Members({ memberId, isAdmin = false }) {
             </div>
           )}
           <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-            <div className="grid grid-cols-4 gap-0 text-[10px] uppercase tracking-[0.35em] text-slate-500 bg-slate-50 border-b border-slate-200 px-6 py-4 font-black">
-              <div className="col-span-2">Member Identity</div>
-              <div>Contact Line</div>
-              <div className="hidden md:block text-right">Jurisdiction</div>
+            <div className="overflow-x-auto">
+            <div className="grid grid-cols-4 gap-0 text-[10px] uppercase tracking-[0.35em] text-slate-500 bg-slate-50 border-b border-slate-200 px-6 py-4 font-black min-w-[480px]">
+              <div className="col-span-2">{t('mem_name')}</div>
+              <div>Contact</div>
+              <div className="hidden md:block text-right">{t('mem_location')}</div>
             </div>
             <div className="divide-y divide-slate-200">
               {loading ? (
@@ -302,14 +305,14 @@ export default function Members({ memberId, isAdmin = false }) {
                   </p>
                 </div>
               ) : filtered.length === 0 ? (
-                <div className="p-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
-                  No matching intelligence found.
+                <div className="p-12 text-center text-slate-500 font-bold uppercase tracking-widest text-xs">
+                  No direct recruits yet.
                 </div>
               ) : (
                 filtered.map((member) => (
                   <div
                     key={member.id}
-                    className="grid grid-cols-4 gap-0 items-center px-6 py-6 hover:bg-slate-50 transition-colors cursor-pointer group"
+                    className="grid grid-cols-4 gap-0 items-center px-6 py-6 hover:bg-slate-50 transition-colors cursor-pointer group min-w-[480px]"
                     onClick={() => setSelectedMember(member)}
                   >
                     <div className="col-span-2 space-y-1 min-w-0">
@@ -331,6 +334,7 @@ export default function Members({ memberId, isAdmin = false }) {
                   </div>
                 ))
               )}
+            </div>
             </div>
 
             {hasMore && (

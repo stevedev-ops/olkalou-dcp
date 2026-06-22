@@ -12,6 +12,10 @@
   body {
     @apply bg-slate-50 text-slate-900 font-outfit antialiased selection:bg-dcp-green/30;
   }
+
+  input, select, textarea {
+    @apply text-slate-900;
+  }
 }
 
 @layer components {
@@ -63,4 +67,38 @@
 }
 ::-webkit-scrollbar-thumb {
   @apply bg-slate-300 rounded-full hover:bg-slate-400;
+}
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white;
+  }
+  
+  /* Hide Admin Sidebar and Header */
+  header, nav, aside, .print\:hidden {
+    display: none !important;
+  }
+
+  /* Expand main area */
+  main, .flex-1 {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .print-page {
+    page-break-after: always;
+    page-break-inside: avoid;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 2cm !important;
+  }
+
+  /* Don't break on the last page */
+  .print-page:last-child {
+    page-break-after: auto;
+  }
 }

@@ -169,30 +169,18 @@ export default function VoterLookup({ onSelect, onSkip }) {
 
           {/* Not in register notice */}
           {results.length === 0 && (
-            <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5 space-y-2">
-              <p className="text-sm font-black text-amber-800 uppercase tracking-tight">
+            <div className="bg-red-50 border border-red-100 rounded-2xl p-5 space-y-2">
+              <p className="text-sm font-black text-red-800 uppercase tracking-tight">
                 ⚠️ Not found in 2022 Register
               </p>
-              <p className="text-xs text-amber-700 leading-relaxed">
-                This person may be a new voter registered after 2022, or their name may be spelled differently in the register. You can still enroll them as a DCP supporter.
+              <p className="text-xs text-red-700 leading-relaxed font-medium">
+                To maintain the integrity of the Democracy for Citizens Party (DCP), all members MUST be verified voters in Ol Kalou. If their name is spelled differently, try searching again. They cannot be enrolled if they are not in the register.
               </p>
             </div>
           )}
         </div>
       )}
 
-      {/* Skip / Direct Enroll */}
-      <div className="flex items-center gap-4 pt-2">
-        <div className="flex-1 h-px bg-slate-200" />
-        <button
-          onClick={onSkip}
-          className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-700 transition-colors whitespace-nowrap"
-        >
-          Skip Lookup — Enroll Directly
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
-        <div className="flex-1 h-px bg-slate-200" />
-      </div>
     </div>
   );
 }

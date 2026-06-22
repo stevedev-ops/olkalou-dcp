@@ -75,7 +75,7 @@ export default function PollingAgents() {
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await api.getAgents();
-    setAgents(data || []);
+    setAgents(data?.results || data || []);
     setLoading(false);
   }, []);
 
@@ -104,7 +104,7 @@ export default function PollingAgents() {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-5xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(0,132,61,0.2)_0%,transparent_60%)] pointer-events-none" />
@@ -114,13 +114,13 @@ export default function PollingAgents() {
               <h1 className="text-3xl font-black text-white italic uppercase">Agent Deployment</h1>
               <p className="text-slate-400 text-sm mt-1">Manage polling agents across all 142 stations</p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="bg-white/10 border border-white/10 rounded-2xl px-5 py-3 text-center">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
+              <div className="bg-white/10 border border-white/10 rounded-2xl px-5 py-3 text-center w-full sm:w-auto">
                 <p className="text-2xl font-black text-white">{pct}%</p>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Deployed</p>
               </div>
               <button onClick={() => setShowAssign(v => !v)}
-                className="flex items-center gap-2 px-5 py-3 bg-dcp-green text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-dcp-green/90 transition shadow-lg shadow-dcp-green/20">
+                className="flex items-center justify-center gap-2 px-5 py-3 bg-dcp-green text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-dcp-green/90 transition shadow-lg shadow-dcp-green/20 w-full sm:w-auto">
                 <UserPlus className="w-4 h-4" /> Assign Agent
               </button>
             </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Hero from '../components/Hero';
 import RegistrationForm from '../components/RegistrationForm';
+import VoterLookup from '../components/VoterLookup';
 import LoginForm from '../components/LoginForm';
 import { api } from '../lib/api';
 import { Lock } from "lucide-react";
@@ -14,6 +15,8 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
 
   // If they have a referrerId or inviteToken, they are probably a new user being invited
   const [authMode, setAuthMode] = useState((referrerId || inviteToken) ? 'register' : 'login');
+  const [authStep, setAuthStep] = useState('lookup'); // 'lookup' | 'form'
+  const [prefillData, setPrefillData] = useState(null);
 
   useEffect(() => {
     if (!referrerId) {
@@ -101,7 +104,7 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
                 Member Login
               </button>
               <button
-                onClick={() => setAuthMode('register')}
+                onClick={() => { setAuthMode('register'); setAuthStep('lookup'); setPrefillData(null); }}
                 className={`px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${authMode === 'register' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 Enroll New Member
@@ -116,11 +119,27 @@ export default function Landing({ onLogin, referrerId, inviteToken }) {
               <div className="w-8 h-8 border-4 border-dcp-green/20 border-t-dcp-green rounded-full animate-spin" />
             </div>
           ) : (referrerValid || inviteValid) ? (
-            <RegistrationForm
-              referrerId={referrerValid ? referrerId : null}
-              inviteToken={inviteValid ? inviteToken : null}
-              onSuccess={(res) => { onLogin(res.member.id, res.token); navigate("/dashboard"); }}
-            />
+            authStep === 'lookup' ? (
+              <div className="max-w-xl mx-auto w-full bg-white rounded-[2rem] p-6 shadow-xl border border-slate-100">
+                <VoterLookup 
+                  onSelect={(formData) => {
+                    setPrefillData(formData);
+                    setAuthStep('form');
+                  }}
+                  onSkip={() => {
+                    setPrefillData(null);
+                    setAuthStep('form');
+                  }}
+                />
+              </div>
+            ) : (
+              <RegistrationForm
+                referrerId={referrerValid ? referrerId : null}
+                inviteToken={inviteValid ? inviteToken : null}
+                initialData={prefillData}
+                onSuccess={(res) => { onLogin(res.member.id, res.token); navigate("/dashboard"); }}
+              />
+            )
           ) : (
             <div className="max-w-md mx-auto text-center py-16 space-y-4">
               <div className="w-16 h-16 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mx-auto">

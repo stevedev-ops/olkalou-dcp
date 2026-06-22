@@ -1,13 +1,30 @@
 import { useState, useEffect, useCallback } from "react";
-import { Users, Shield, ChevronRight, ChevronDown, Plus, X, Database, Search, User, Smartphone, MapPin, Hash, Star, LayoutDashboard, Network, BarChart3, LogOut, Menu, CheckCircle2, UserCheck, Mail } from "lucide-react";
+import { Users, Star, Network, Database, ShieldCheck, MapPin, Search, Menu, X, CheckCircle2, ChevronRight, ChevronDown, Plus, Download, User, Smartphone, Hash, LayoutDashboard, BarChart3, LogOut, UserCheck, Mail, BookOpen, Truck, UserCog, ClipboardList, AlertTriangle, Phone, Link2, MessageSquare, Navigation, Trophy, UserPlus, Calendar, Megaphone, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import RegistrationForm from "../components/RegistrationForm";
+import VoterLookup from "../components/VoterLookup";
 import logo from "../assets/logo.png";
 import { getChildrenById } from "../lib/memberCache";
 import Reports from "./Reports";
+import PollingCoverage from "./PollingCoverage";
+import Canvass from "./Canvass";
+import Transport from "./Transport";
+import PollingAgents from "./PollingAgents";
+import Pvt from "./Pvt";
+import Incidents from "./Incidents";
+import PhoneBank from "./PhoneBank";
+import ContactMatcher from "./ContactMatcher";
+import { exportToCSV } from "../lib/exportUtils";
+import SmsExport from "./SmsExport";
+import Gotv from "./Gotv";
+import Leaderboard from "./Leaderboard";
+import Enrollment from "./Enrollment";
+import Events from "./Events";
+import CheatSheets from "./CheatSheets";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const PAGE_SIZE = 20;
 
@@ -176,14 +193,53 @@ const TreeNode = ({ member, depth = 0, onSelectMember }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Admin({ onLogout }) {
-  const PAGE_SIZE = 50;
+  const { t } = useLanguage();
+  const handlePanicWipe = () => {
+    localStorage.clear();
+    window.location.href = "https://www.google.com/search?q=weather+in+nairobi";
+  };
   const navigate = useNavigate();
 
   // Primary State
-  const [activeTab, setActiveTab] = useState("overview"); 
+  const [activeTab, setActiveTab] = useState("overview");
+
+  // Emergency Broadcast State
+  const [activeBroadcast, setActiveBroadcast] = useState(null);
+  const [broadcastText, setBroadcastText] = useState("");
+  const [broadcastSeverity, setBroadcastSeverity] = useState("critical");
+  const [broadcastTargetType, setBroadcastTargetType] = useState("global");
+  const [broadcastTargetWards, setBroadcastTargetWards] = useState([]);
+  const [broadcastTargetMembers, setBroadcastTargetMembers] = useState([]);
+  const [isBroadcasting, setIsBroadcasting] = useState(false); 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addModalStep, setAddModalStep] = useState('lookup');
+
+  // Sidebar Notification Counts
+  const [transportCount, setTransportCount] = useState(0);
+  const [incidentCount, setIncidentCount] = useState(0);
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+      try {
+        const [transRes, incRes] = await Promise.all([
+          api.getTransport(),
+          api.getIncidents()
+        ]);
+        if (transRes.data) {
+          setTransportCount(transRes.data.filter(t => t.status === 'pending').length);
+        }
+        if (incRes.data) {
+          setIncidentCount(incRes.data.filter(i => i.status !== 'resolved').length);
+        }
+      } catch (err) {}
+    };
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 60000);
+    return () => clearInterval(interval);
+  }, []);
+  const [addModalPrefill, setAddModalPrefill] = useState(null);
   const [selectedMember, setSelectedMember] = useState(null);
   const [generatedInvite, setGeneratedInvite] = useState(null);
   const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
@@ -194,7 +250,6 @@ export default function Admin({ onLogout }) {
   const [totalRoots, setTotalRoots] = useState(0);
   const [verifiedVoters, setVerifiedVoters] = useState(0);
   const [unverifiedNew, setUnverifiedNew] = useState(0);
-  const [maxRootDepth, setMaxRootDepth] = useState(0);
   const [dbStatus, setDbStatus] = useState("checking"); // "checking" | "online" | "error"
 
   // Pagination & Data States for Roots
@@ -227,7 +282,6 @@ export default function Admin({ onLogout }) {
     try {
       const { data: allData } = await api.getMembers({});
       const list = Array.isArray(allData) ? allData : (allData?.results || []);
-      // Filter out admins from overview lists
       const filteredList = list.filter(m => !m.is_admin && !m.is_staff);
       const recent = filteredList.slice(0, 6);
       setRecentMembers(recent);
@@ -237,15 +291,6 @@ export default function Admin({ onLogout }) {
       setWardSnapshot(sorted);
     } catch (e) { console.error('Overview data error:', e); }
   }, []);
-
-  // Inline row stats
-  const [recruitCounts, setRecruitCounts] = useState({});   // memberId → direct count
-  const [referrerNames, setReferrerNames] = useState({});   // memberId → referrer full_name
-
-  // recruit counts are now included directly in the serializer as 'recruits_count'
-  // referrer name is also included as 'referrer_name' — no extra fetches needed
-  const fetchRecruitCounts = useCallback(() => {}, []);
-  const fetchReferrerNames = useCallback(() => {}, []);
 
   // Selected Member Analytics
   const [selectedMemberDirectCount, setSelectedMemberDirectCount] = useState(0);
@@ -284,7 +329,6 @@ export default function Admin({ onLogout }) {
         throw error;
       }
       if (data) {
-        // Double check filter: only keep non-admins in mobilizer list
         const members = (data.results || []).filter(m => !m.is_admin && !m.is_staff);
         if (pageIdx === 0) setRoots(members);
         else setRoots(prev => [...prev, ...members]);
@@ -316,7 +360,6 @@ export default function Admin({ onLogout }) {
         throw error;
       }
       if (data) {
-        // Double check filter: only keep non-admins
         const members = (data.results || []).filter(m => !m.is_admin && !m.is_staff);
         if (pageIdx === 0) setAllMembers(members);
         else setAllMembers(prev => [...prev, ...members]);
@@ -325,7 +368,7 @@ export default function Admin({ onLogout }) {
       }
     } catch (err) { console.error(err); toast.error("Error loading recruits"); }
     finally { setLoadingMoreMembers(false); }
-  }, [navigate]);
+  }, [navigate, memberSort]);
 
   // Debounced search effect
   useEffect(() => {
@@ -339,18 +382,6 @@ export default function Admin({ onLogout }) {
     return () => clearTimeout(timer);
   }, [searchQuery, voterStatusFilter, activeTab, loadRootPage, loadMembersPage]);
 
-  // Initial Fetch
-  useEffect(() => {
-    loadTotalRegistered();
-    loadRootPage(0, "");
-    loadMembersPage(0, "", voterStatusFilter);
-    loadOverviewData();
-    
-    // Fetch current admin profile
-    api.getMe().then(({ data }) => {
-      if (data) setCurrentUser(data);
-    });
-  }, [loadTotalRegistered, loadRootPage, loadMembersPage, loadOverviewData, voterStatusFilter]);
 
   // Fetch Voter Records
   const loadVoterRecordsPage = useCallback(async (pageIdx, q = "", ward = "") => {
@@ -370,6 +401,70 @@ export default function Admin({ onLogout }) {
     } catch (err) { console.error(err); }
     finally { setLoadingVoters(false); }
   }, []);
+
+  const loadBroadcast = useCallback(async () => {
+    try {
+      const { data } = await api.getBroadcast();
+      if (data && data.is_active) setActiveBroadcast(data);
+      else setActiveBroadcast(null);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  // Initial Fetch
+  useEffect(() => {
+    loadTotalRegistered();
+    loadRootPage(0, "");
+    loadMembersPage(0, "", voterStatusFilter);
+    loadOverviewData();
+    loadBroadcast();
+    
+    api.getMe().then(({ data }) => {
+      if (data) setCurrentUser(data);
+    });
+  }, [loadTotalRegistered, loadRootPage, loadMembersPage, loadOverviewData, loadBroadcast]);
+
+  const handleSetBroadcast = async () => {
+    if (!broadcastText.trim()) {
+      toast.error("Message is required.");
+      return;
+    }
+    setIsBroadcasting(true);
+    try {
+      const { data, error } = await api.adminCreateBroadcast({
+        message: broadcastText,
+        severity: broadcastSeverity,
+        target_type: broadcastTargetType,
+        target_wards: broadcastTargetWards,
+        target_member_ids: broadcastTargetMembers.map(m => m.id)
+      });
+      if (error) throw error;
+      setActiveBroadcast(data);
+      setBroadcastText("");
+      setBroadcastTargetMembers([]);
+      setBroadcastTargetWards([]);
+      toast.success("Targeted Emergency Broadcast sent!");
+    } catch (err) {
+      toast.error(err.message || "Failed to send broadcast");
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
+
+  const handleClearBroadcast = async () => {
+    setIsBroadcasting(true);
+    try {
+      const { error } = await api.adminClearBroadcast();
+      if (error) throw error;
+      setActiveBroadcast(null);
+      toast.success("Broadcast cleared.");
+    } catch (err) {
+      toast.error("Failed to clear broadcast");
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === "voter-registry") {
@@ -441,7 +536,6 @@ export default function Admin({ onLogout }) {
       
       toast.success(`${selectedMember.full_name} is now a Root Mobilizer!`);
       setSelectedMember(null);
-      // Reload lists
       loadRootPage(0, searchQuery);
       loadMembersPage(0, searchQuery, voterStatusFilter);
     } catch (err) {
@@ -449,7 +543,6 @@ export default function Admin({ onLogout }) {
     }
   };
 
-  // Derived lineage UI stats
   const directInviter = selectedMemberLineage.length > 1 ? selectedMemberLineage[selectedMemberLineage.length - 2] : null;
   const topMobilizer = selectedMemberLineage.length > 0 ? selectedMemberLineage[0] : null;
   const selectedMemberTier = selectedMemberLineage.length;
@@ -496,8 +589,7 @@ export default function Admin({ onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex overflow-hidden w-full">
-      {/* ── Sidebar ───────────────────────────────────────── */}
+    <div className="min-h-screen bg-slate-50 flex w-full">
       <AnimatePresence initial={false}>
          {isSidebarOpen && (
             <motion.div 
@@ -505,7 +597,7 @@ export default function Admin({ onLogout }) {
                animate={{ x: 0 }}
                exit={{ x: -300 }}
                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-               className="w-72 bg-white border-r border-slate-200 shadow-sm z-30 flex flex-col fixed inset-y-0 left-0 md:relative"
+               className="w-72 bg-white border-r border-slate-200 shadow-sm z-30 flex flex-col fixed inset-y-0 left-0"
             >
                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -531,12 +623,27 @@ export default function Admin({ onLogout }) {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Intelligence</p>
                   <NavItem id="voter-registry" icon={Database} label="Voter Registry" activeTab={activeTab} setActiveTab={setActiveTab} />
                   <NavItem id="analytics" icon={BarChart3} label="System Analytics" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Operations</p>
+                  <NavItem id="coverage" icon={MapPin} label="Coverage" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="canvass" icon={BookOpen} label="Panna (Canvass)" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="transport" icon={Truck} label="Boda Transport" count={transportCount > 0 ? transportCount : undefined} activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="agents" icon={UserCog} label="Polling Agents" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="tally" icon={ClipboardList} label="PVT Tally" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="incidents" icon={AlertTriangle} label="Alerts" count={incidentCount > 0 ? incidentCount : undefined} activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="phonebank" icon={Phone} label="Phone Bank" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="matcher" icon={Link2} label="Contact Matcher" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="sms" icon={MessageSquare} label="SMS Export" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="events" icon={Calendar} label="Rally Check-ins" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="gotv" icon={Navigation} label="GOTV" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="leaderboard" icon={Trophy} label="Leaderboard" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="enroll" icon={UserPlus} label="Enroll Member" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <NavItem id="training" icon={BookOpen} label="Training Materials" activeTab={activeTab} setActiveTab={setActiveTab} />
                </div>
                <div className="p-4 border-t border-slate-100">
                   <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-md">
                      <div className="flex items-center gap-3 mb-3">
                         <div className="w-8 h-8 rounded-full bg-dcp-green/20 border border-dcp-green/30 flex items-center justify-center">
-                           <Shield size={14} className="text-dcp-green" />
+                           <ShieldCheck size={14} className="text-dcp-green" />
                         </div>
                         <div>
                             <p className="text-xs font-black uppercase tracking-widest">{currentUser?.full_name || 'System Admin'}</p>
@@ -546,14 +653,16 @@ export default function Admin({ onLogout }) {
                      <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-xs font-bold uppercase tracking-widest mt-2">
                         <LogOut size={14} /> Sign Out
                      </button>
+                     <button onClick={handlePanicWipe} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 transition-colors text-xs font-black uppercase tracking-widest mt-2 shadow-lg shadow-red-500/20">
+                        <AlertTriangle size={14} /> {t('wipe_device')}
+                     </button>
                   </div>
                </div>
             </motion.div>
          )}
       </AnimatePresence>
 
-      {/* ── Main Area ─────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen transition-all bg-slate-50/50">
+      <div className={`flex-1 flex flex-col min-w-0 min-h-screen transition-all bg-slate-50/50 ${isSidebarOpen ? 'ml-72' : ''}`}>
         <header className="h-20 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 shadow-sm sticky top-0 z-20 w-full">
          <div className="flex items-center gap-4">
             {!isSidebarOpen && (
@@ -569,6 +678,20 @@ export default function Admin({ onLogout }) {
                   {activeTab === 'all' && 'Membership Registry'}
                   {activeTab === 'voter-registry' && '2022 Official Voter Database'}
                   {activeTab === 'analytics' && 'Official Party Reports'}
+                  {activeTab === 'coverage' && 'Polling Coverage Map'}
+                  {activeTab === 'canvass' && 'Panna Canvass Management'}
+                  {activeTab === 'transport' && 'Boda Transport Management'}
+                  {activeTab === 'agents' && 'Polling Agent Management'}
+                  {activeTab === 'tally' && 'PVT Parallel Vote Tally'}
+                  {activeTab === 'incidents' && 'Alerts & Incident Reports'}
+                  {activeTab === 'phonebank' && 'Phone Bank Operations'}
+                  {activeTab === 'matcher' && 'Relational Contact Matcher'}
+                  {activeTab === 'sms' && 'SMS Export'}
+                  {activeTab === 'events' && 'Rally & Event Check-ins'}
+                  {activeTab === 'gotv' && 'GOTV — Get Out The Vote'}
+                  {activeTab === 'leaderboard' && 'Mobilizer Leaderboard'}
+                  {activeTab === 'enroll' && 'Enroll New Member'}
+                  {activeTab === 'training' && 'Printable Training Materials'}
                </h1>
                <div className="flex items-center gap-2 mt-0.5">
                   <span className="w-2 h-2 rounded-full bg-dcp-green animate-pulse"></span>
@@ -576,17 +699,16 @@ export default function Admin({ onLogout }) {
                </div>
             </div>
          </div>
-         <button onClick={() => setShowAddModal(true)} className="hidden sm:flex bg-slate-950 text-white px-5 py-3 rounded-xl font-bold uppercase tracking-widest text-xs items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg">
+         <button onClick={() => { setShowAddModal(true); setAddModalStep('lookup'); setAddModalPrefill(null); }} className="hidden sm:flex bg-slate-950 text-white px-5 py-3 rounded-xl font-bold uppercase tracking-widest text-xs items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg">
             <Plus size={16} className="text-dcp-green" /> Establish Root
          </button>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar relative flex flex-col md:flex-row gap-6">
-          <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full">
+        <main className="flex-1 p-4 md:p-8 relative flex flex-col md:flex-row gap-6">
+          <div className="flex-1 flex flex-col w-full">
             {activeTab === "overview" ? (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {/* Card 1 — Total Members */}
                   <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col relative overflow-hidden">
                     <div className="absolute -right-4 -bottom-4 opacity-[0.03]"><Users size={120} /></div>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Total Members</p>
@@ -609,7 +731,6 @@ export default function Admin({ onLogout }) {
                     </div>
                   </div>
 
-                  {/* Card 2 — Root Mobilizers */}
                   <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col relative overflow-hidden">
                     <div className="absolute -right-4 -bottom-4 opacity-[0.03]"><Star size={120} /></div>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Root Mobilizers</p>
@@ -631,7 +752,6 @@ export default function Admin({ onLogout }) {
                     </div>
                   </div>
 
-                  {/* Card 3 — Avg. Recruits Per Root */}
                   <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col relative overflow-hidden">
                     <div className="absolute -right-4 -bottom-4 opacity-[0.03]"><Network size={120} /></div>
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Avg. Recruits / Root</p>
@@ -654,7 +774,6 @@ export default function Admin({ onLogout }) {
                     </div>
                   </div>
 
-                  {/* Card 4 — System Health */}
                   <div className="rounded-3xl border border-slate-200 bg-slate-900 p-6 shadow-lg flex flex-col justify-between items-start">
                     <div className="w-full">
                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">System Health</p>
@@ -685,9 +804,124 @@ export default function Admin({ onLogout }) {
                   </div>
                 </div>
 
-                {/* Quick Actions */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  <button onClick={() => setShowAddModal(true)} className="bg-slate-900 text-white p-5 rounded-2xl flex items-center gap-4 hover:bg-slate-800 transition-colors shadow-sm text-left">
+                {/* Emergency Command Center */}
+                <div className={`rounded-3xl border ${activeBroadcast ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'} p-6 shadow-sm`}>
+                  <div className="flex items-center gap-3 mb-4 border-b border-slate-100 pb-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${activeBroadcast ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-100 text-slate-400'}`}>
+                      <Megaphone size={20} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">System Override</p>
+                      <h3 className="font-black text-slate-900 text-base uppercase tracking-widest">Emergency Broadcast</h3>
+                    </div>
+                  </div>
+                  
+                  {activeBroadcast ? (
+                    <div className="space-y-4">
+                      <div className="bg-red-600 text-white p-4 rounded-2xl">
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-1">Active Alert</p>
+                        <p className="font-bold">{activeBroadcast.message}</p>
+                      </div>
+                      <button 
+                        onClick={handleClearBroadcast}
+                        disabled={isBroadcasting}
+                        className="w-full bg-white border-2 border-slate-200 text-slate-900 font-black text-xs uppercase tracking-widest py-3 rounded-xl hover:bg-slate-50 transition"
+                      >
+                        {isBroadcasting ? <Loader2 size={16} className="animate-spin mx-auto" /> : "Clear Global Alert"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <textarea
+                        value={broadcastText}
+                        onChange={(e) => setBroadcastText(e.target.value)}
+                        placeholder="Type emergency alert message..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold resize-none focus:outline-none focus:border-red-400 focus:bg-white transition"
+                        rows="3"
+                      />
+                      <div className="flex flex-col gap-3 border-t border-slate-100 pt-3">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <select 
+                            value={broadcastSeverity}
+                            onChange={(e) => setBroadcastSeverity(e.target.value)}
+                            className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-600 focus:outline-none flex-1"
+                          >
+                            <option value="critical">Severity: Critical (Red)</option>
+                            <option value="warning">Severity: Warning (Yellow)</option>
+                          </select>
+                          <select 
+                            value={broadcastTargetType}
+                            onChange={(e) => setBroadcastTargetType(e.target.value)}
+                            className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-600 focus:outline-none flex-1"
+                          >
+                            <option value="global">Target: Global (Everyone)</option>
+                            <option value="ward">Target: Specific Wards</option>
+                            <option value="specific_people">Target: Specific People</option>
+                          </select>
+                        </div>
+                        
+                        {broadcastTargetType === 'ward' && (
+                          <div className="flex flex-col gap-2">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type Wards (comma separated)</p>
+                            <input
+                              type="text"
+                              placeholder="e.g. Karau, Kaimbaga"
+                              value={broadcastTargetWards.join(", ")}
+                              onChange={(e) => setBroadcastTargetWards(e.target.value.split(",").map(s => s.trim()).filter(Boolean))}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:border-dcp-green"
+                            />
+                          </div>
+                        )}
+
+                        {broadcastTargetType === 'specific_people' && (
+                          <div className="flex flex-col gap-2">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Target Members</p>
+                            <div className="flex gap-2">
+                               <select 
+                                  onChange={(e) => {
+                                      const id = e.target.value;
+                                      if (!id) return;
+                                      const m = allMembers.find(x => x.id.toString() === id);
+                                      if (m && !broadcastTargetMembers.find(x => x.id === m.id)) {
+                                          setBroadcastTargetMembers([...broadcastTargetMembers, m]);
+                                      }
+                                      e.target.value = "";
+                                  }}
+                                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none"
+                               >
+                                  <option value="">-- Select Member to Add --</option>
+                                  {allMembers.map(m => (
+                                      <option key={m.id} value={m.id}>{m.full_name} ({m.phone})</option>
+                                  ))}
+                               </select>
+                            </div>
+                            {broadcastTargetMembers.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                    {broadcastTargetMembers.map(m => (
+                                        <span key={m.id} className="bg-slate-200 text-slate-700 text-xs px-2 py-1 rounded-lg flex items-center gap-1">
+                                            {m.full_name}
+                                            <button onClick={() => setBroadcastTargetMembers(broadcastTargetMembers.filter(x => x.id !== m.id))} className="text-red-500 hover:text-red-700"><X size={12} /></button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                          </div>
+                        )}
+
+                        <button 
+                          onClick={handleSetBroadcast}
+                          disabled={isBroadcasting || !broadcastText.trim() || (broadcastTargetType === 'ward' && broadcastTargetWards.length === 0) || (broadcastTargetType === 'specific_people' && broadcastTargetMembers.length === 0)}
+                          className="w-full bg-red-600 text-white font-black text-xs uppercase tracking-widest py-3 rounded-xl hover:bg-red-700 transition disabled:opacity-50 flex justify-center items-center gap-2 shadow-lg shadow-red-600/20 mt-2"
+                        >
+                          {isBroadcasting ? <Loader2 size={16} className="animate-spin" /> : <><Megaphone size={16} /> Send Targeted Alert</>}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <button onClick={() => { setShowAddModal(true); setAddModalStep('lookup'); setAddModalPrefill(null); }} className="bg-slate-900 text-white p-5 rounded-2xl flex items-center gap-4 hover:bg-slate-800 transition-colors shadow-sm text-left">
                     <div className="w-10 h-10 rounded-xl bg-dcp-green/20 flex items-center justify-center shrink-0"><Plus size={18} className="text-dcp-green" /></div>
                     <div><p className="font-black text-sm uppercase tracking-widest">Add Root</p><p className="text-[10px] text-slate-400 font-bold mt-0.5">Manual entry</p></div>
                   </button>
@@ -711,10 +945,7 @@ export default function Admin({ onLogout }) {
                   </button>
                 </div>
 
-                {/* Recent + Ward Snapshot */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                  {/* Recent Registrations */}
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                       <div>
@@ -725,7 +956,7 @@ export default function Admin({ onLogout }) {
                     </div>
                     <div className="divide-y divide-slate-100">
                       {recentMembers.length === 0 ? (
-                        <p className="p-6 text-xs text-slate-400 font-bold uppercase tracking-widest text-center">No registrations yet.</p>
+                        <p className="p-6 text-xs text-slate-500 font-bold uppercase tracking-widest text-center">No registrations yet.</p>
                       ) : recentMembers.map(m => (
                         <div key={m.id} onClick={() => { setSelectedMember(m); setActiveTab('all'); }} className="px-6 py-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors">
                           <div className="flex items-center gap-3">
@@ -743,7 +974,6 @@ export default function Admin({ onLogout }) {
                     </div>
                   </div>
 
-                  {/* Ward Snapshot */}
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                       <div>
@@ -754,7 +984,7 @@ export default function Admin({ onLogout }) {
                     </div>
                     <div className="p-6 space-y-4">
                       {wardSnapshot.length === 0 ? (
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest text-center py-4">No data yet.</p>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest text-center py-4">No data yet.</p>
                       ) : wardSnapshot.map((w, i) => {
                         const pct = totalRegistered > 0 ? Math.round((w.count / totalRegistered) * 100) : 0;
                         return (
@@ -774,7 +1004,6 @@ export default function Admin({ onLogout }) {
                       })}
                     </div>
                   </div>
-
                 </div>
               </div>
             ) : activeTab === "tree" ? (
@@ -787,11 +1016,67 @@ export default function Admin({ onLogout }) {
                 ))}
               </div>
             ) : activeTab === "analytics" ? (
-              <div className="h-full w-full overflow-y-auto custom-scrollbar rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
                 <Reports />
               </div>
+            ) : activeTab === "coverage" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <PollingCoverage />
+              </div>
+            ) : activeTab === "canvass" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Canvass memberId={null} isAdmin={true} />
+              </div>
+            ) : activeTab === "transport" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Transport memberId={null} isAdmin={true} />
+              </div>
+            ) : activeTab === "agents" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <PollingAgents isAdmin={true} />
+              </div>
+            ) : activeTab === "tally" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Pvt memberId={null} isAdmin={true} />
+              </div>
+            ) : activeTab === "incidents" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Incidents isAdmin={true} />
+              </div>
+            ) : activeTab === "phonebank" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <PhoneBank isAdmin={true} />
+              </div>
+            ) : activeTab === "matcher" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <ContactMatcher isAdmin={true} />
+              </div>
+            ) : activeTab === "sms" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <SmsExport isAdmin={true} />
+              </div>
+            ) : activeTab === "events" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Events isAdmin={true} />
+              </div>
+            ) : activeTab === "gotv" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Gotv memberId={null} isAdmin={true} />
+              </div>
+            ) : activeTab === "leaderboard" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Leaderboard memberId={null} isAdmin={true} />
+              </div>
+            ) : activeTab === "enroll" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0">
+                <Enrollment memberId={null} isAdmin={true} />
+              </div>
+            ) : activeTab === "training" ? (
+              <div className="w-full rounded-3xl bg-white border border-slate-200 shadow-sm relative z-0 p-6">
+                <CheatSheets />
+              </div>
             ) : activeTab === "voter-registry" ? (
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-[calc(100vh-12rem)] animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0 space-y-4">
                   <div className="flex gap-4 items-center">
                     <div className="relative flex-1">
@@ -816,7 +1101,7 @@ export default function Admin({ onLogout }) {
                     </div>
                   </div>
                 </div>
-                <div className="divide-y divide-slate-100 overflow-y-auto flex-1 custom-scrollbar">
+                <div className="divide-y divide-slate-100 flex-1">
                   {voterRecords.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center px-6">
                       <div className="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4">
@@ -881,29 +1166,54 @@ export default function Admin({ onLogout }) {
                 </div>
               </div>
             ) : (activeTab === "mobilizers" || activeTab === "all") && (
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden h-[calc(100vh-12rem)]">
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col">
                 <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0 space-y-4">
-                  <div className="flex gap-2 p-1 bg-slate-200/50 rounded-xl w-fit">
-                    {[
-                      { id: 'all', label: 'All Registrants', count: totalRegistered },
-                      { id: 'verified', label: 'Verified Voters', count: verifiedVoters },
-                      { id: 'unverified', label: 'Unverified', count: unverifiedNew }
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        onClick={() => { setVoterStatusFilter(tab.id); setMemberPage(0); }}
-                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
-                          voterStatusFilter === tab.id 
-                            ? 'bg-white text-slate-900 shadow-sm' 
-                            : 'text-slate-500 hover:text-slate-700'
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex gap-2 p-1 bg-slate-200/50 rounded-xl w-fit">
+                      {[
+                        { id: 'all', label: 'All Registrants', count: totalRegistered },
+                        { id: 'verified', label: 'Verified Voters', count: verifiedVoters },
+                        { id: 'unverified', label: 'Unverified', count: unverifiedNew }
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => { setVoterStatusFilter(tab.id); setMemberPage(0); }}
+                          className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                            voterStatusFilter === tab.id 
+                              ? 'bg-white text-slate-900 shadow-sm' 
+                              : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                        >
+                          {tab.label} <span className="ml-1 opacity-50">({tab.count})</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => {
+                          const newSort = memberSort === "id" ? "voter_status" : "id";
+                          setMemberSort(newSort);
+                          setMemberPage(0);
+                          loadMembersPage(0, searchQuery, voterStatusFilter);
+                        }}
+                        className={`px-4 py-3 rounded-2xl border transition-all font-bold text-xs uppercase tracking-widest flex items-center gap-2 ${
+                          memberSort === "voter_status" ? "bg-dcp-green/10 border-dcp-green/30 text-dcp-green" : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
                         }`}
                       >
-                        {tab.label} <span className="ml-1 opacity-50">({tab.count})</span>
+                        <ShieldCheck size={16} /> Sort Verified
                       </button>
-                    ))}
+                      <button
+                        onClick={() => {
+                          const data = activeTab === "mobilizers" ? roots : allMembers;
+                          exportToCSV(data, `${activeTab}_export_${new Date().toISOString().split('T')[0]}`);
+                        }}
+                        className="px-4 py-3 rounded-2xl bg-slate-900 text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg"
+                      >
+                        <Download size={16} /> Export
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-4 items-center">
-                    <div className="relative flex-1">
+                  <div className="relative flex-1">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
                       <input
                         type="text"
@@ -912,26 +1222,9 @@ export default function Admin({ onLogout }) {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                       />
-                    </div>
-                    <button 
-                      onClick={() => {
-                        const newSort = memberSort === "id" ? "voter_status" : "id";
-                        setMemberSort(newSort);
-                        setMemberPage(0);
-                        loadMembersPage(0, searchQuery, voterStatusFilter);
-                      }}
-                      className={`px-6 py-4 rounded-2xl border transition-all font-bold text-xs uppercase tracking-widest flex items-center gap-2 ${
-                        memberSort === "voter_status" 
-                          ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <UserCheck size={16} className={memberSort === "voter_status" ? "text-dcp-green" : ""} />
-                      {memberSort === "voter_status" ? "Verified First" : "Default Sort"}
-                    </button>
                   </div>
                 </div>
-                <div className="divide-y divide-slate-100 overflow-y-auto flex-1 custom-scrollbar">
+                <div className="divide-y divide-slate-100 flex-1">
                   {(activeTab === "mobilizers" ? roots : allMembers).length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center px-6">
                       <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
@@ -1151,11 +1444,28 @@ export default function Admin({ onLogout }) {
                   <X size={18} className="text-white" />
                 </button>
               </div>
-              <RegistrationForm
-                referrerId={null}
-                isAdmin={true}
-                onSuccess={() => { setShowAddModal(false); toast.success("Root Mobilizer established!"); loadRootPage(0, ""); }}
-              />
+
+              {addModalStep === 'lookup' ? (
+                <div className="bg-white rounded-[2rem] p-6 shadow-2xl">
+                  <VoterLookup 
+                    onSelect={(formData) => {
+                      setAddModalPrefill(formData);
+                      setAddModalStep('form');
+                    }}
+                    onSkip={() => {
+                      setAddModalPrefill(null);
+                      setAddModalStep('form');
+                    }}
+                  />
+                </div>
+              ) : (
+                <RegistrationForm
+                  referrerId={null}
+                  isAdmin={true}
+                  initialData={addModalPrefill}
+                  onSuccess={() => { setShowAddModal(false); toast.success("Root Mobilizer established!"); loadRootPage(0, ""); }}
+                />
+              )}
             </motion.div>
           </motion.div>
         )}

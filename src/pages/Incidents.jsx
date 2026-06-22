@@ -13,7 +13,7 @@ const TYPE_CONFIG = {
   other:         { label: "Other",         color: "bg-slate-100 text-slate-700 border-slate-200", icon: "📝" },
 };
 
-export default function Incidents() {
+export default function Incidents({ isAdmin = false }) {
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false);
@@ -24,7 +24,7 @@ export default function Incidents() {
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await api.getIncidents();
-    setIncidents(data || []);
+    setIncidents(data?.results || data || []);
     setLoading(false);
   }, []);
 
@@ -50,7 +50,7 @@ export default function Incidents() {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-5xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         {/* Header */}
         <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl">

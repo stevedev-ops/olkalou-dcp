@@ -91,7 +91,7 @@ export default function Leaderboard({ memberId }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-4xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         {/* Header */}
         <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl">
@@ -111,7 +111,7 @@ export default function Leaderboard({ memberId }) {
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: "Top Mobilizer", value: loading ? "—" : data?.top_mobilizers?.[0]?.full_name?.split(' ')[0] || "—", icon: <Crown className="w-5 h-5 text-amber-400" /> },
             { label: "Total Top-20 Recruits", value: loading ? "—" : totalRecruitsAll, icon: <Users className="w-5 h-5 text-dcp-green" /> },
@@ -144,7 +144,7 @@ export default function Leaderboard({ memberId }) {
                 <div key={i} className="h-20 bg-slate-200 animate-pulse rounded-2xl" />
               ))
             ) : data?.top_mobilizers?.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 text-xs font-black uppercase tracking-widest bg-white rounded-3xl border border-slate-200">
+              <div className="p-12 text-center text-slate-500 text-xs font-black uppercase tracking-widest bg-white rounded-3xl border border-slate-200">
                 No recruiters yet — be the first to enroll!
               </div>
             ) : (

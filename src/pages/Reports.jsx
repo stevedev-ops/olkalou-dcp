@@ -122,7 +122,7 @@ export default function Reports({ memberId }) {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-6xl mx-auto px-4 space-y-8">
+      <div className="w-full space-y-8">
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
@@ -142,7 +142,7 @@ export default function Reports({ memberId }) {
         </div>
 
         {/* ── Three-Mode Intelligence Toggle ── */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-2 flex gap-2">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-2 flex flex-col sm:flex-row gap-2">
           {[
             { id: 'all', label: '📋 All Registrants', desc: 'Self-reported location' },
             { id: 'verified', label: '✅ IEBC Verified Voters', desc: 'Official IEBC ward names' },
@@ -327,7 +327,7 @@ export default function Reports({ memberId }) {
             ) : pollingSummary.length === 0 ? (
               <p className="text-sm text-slate-500">No polling station data found.</p>
             ) : filteredPolling.length === 0 ? (
-              <p className="text-sm text-slate-400 font-bold uppercase tracking-widest text-center py-6">No match for "{pollingSearch}"</p>
+              <p className="text-sm text-slate-500 font-bold uppercase tracking-widest text-center py-6">No match for "{pollingSearch}"</p>
             ) : (
               <>
                 {pollingSlice.map((item, idx) => {

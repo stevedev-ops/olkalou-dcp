@@ -1,8 +1,8 @@
 from rest_framework import status, views, response, generics
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Count, Q
-from .models import Member, Invite, VoterRecord, CanvassAssignment, TransportRequest, PollingAgent, TallyRecord, IncidentReport, PhoneBankTarget, CallRecord
-from .serializers import MemberSerializer, InviteSerializer, VoterRecordSerializer
+from .models import Member, Invite, VoterRecord, CanvassAssignment, TransportRequest, PollingAgent, TallyRecord, IncidentReport, PhoneBankTarget, CallRecord, EmergencyBroadcast
+from .serializers import MemberSerializer, InviteSerializer, VoterRecordSerializer, EventSerializer, EmergencyBroadcastSerializer
 
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
@@ -87,7 +87,7 @@ class MemberRegisterView(views.APIView):
         if referrer_id and not invite_token:
             try:
                 referrer = Member.objects.get(id=referrer_id)
-                quota = 25 if referrer.referred_by is None else 5
+                quota = 10 if referrer.referred_by is None else 5
                 current_count = referrer.recruits.count()
                 if current_count >= quota:
                     return response.Response(
@@ -590,6 +590,8 @@ class CanvassListView(views.APIView):
         member_id = request.query_params.get('member')
         if member_id:
             qs = qs.filter(mobilizer_id=member_id)
+        if not request.user.is_admin:
+            qs = qs.filter(mobilizer=request.user)
         return response.Response([
             {
                 'id': a.id,
@@ -650,6 +652,8 @@ class TransportListView(views.APIView):
         qs = TransportRequest.objects.select_related('member').all()
         if ward:
             qs = qs.filter(ward__icontains=ward)
+        if not request.user.is_admin:
+            qs = qs.filter(member=request.user)
         return response.Response([
             {
                 'id': t.id,
@@ -660,6 +664,7 @@ class TransportListView(views.APIView):
                 'ward': t.ward,
                 'polling_station': t.polling_station,
                 'rider_name': t.rider_name,
+                'rider_phone': t.rider_phone,
                 'status': t.status,
                 'created_at': t.created_at,
             }
@@ -693,8 +698,9 @@ class TransportUpdateView(views.APIView):
             return response.Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         t.status = request.data.get('status', t.status)
         t.rider_name = request.data.get('rider_name', t.rider_name)
-        t.save(update_fields=['status', 'rider_name'])
-        return response.Response({'id': t.id, 'status': t.status, 'rider_name': t.rider_name})
+        t.rider_phone = request.data.get('rider_phone', t.rider_phone)
+        t.save(update_fields=['status', 'rider_name', 'rider_phone'])
+        return response.Response({'id': t.id, 'status': t.status, 'rider_name': t.rider_name, 'rider_phone': t.rider_phone})
 
 
 # ─── Polling Agent Deployment ─────────────────────────────────────────────────
@@ -703,6 +709,8 @@ class AgentListView(views.APIView):
 
     def get(self, request):
         qs = PollingAgent.objects.select_related('member').all()
+        if not request.user.is_admin:
+            qs = qs.filter(member=request.user)
         return response.Response([
             {
                 'id': a.id,
@@ -765,6 +773,9 @@ class TallyListView(views.APIView):
         ward = request.query_params.get('ward')
         if ward:
             qs = qs.filter(ward__icontains=ward)
+            
+        if not request.user.is_admin:
+            qs = qs.filter(submitted_by=request.user)
 
         # Aggregate totals
         total_dcp = sum(t.dcp_votes for t in qs)
@@ -793,6 +804,7 @@ class TallyListView(views.APIView):
                     'registered_voters': t.registered_voters,
                     'submitted_by': t.submitted_by.full_name if t.submitted_by else 'Unknown',
                     'is_verified': t.is_verified,
+                    'form_34a_image': request.build_absolute_uri(t.form_34a_image.url) if t.form_34a_image else None,
                     'submitted_at': t.submitted_at,
                     'notes': t.notes,
                 }
@@ -816,6 +828,11 @@ class TallyListView(views.APIView):
                 'notes': d.get('notes', ''),
             }
         )
+
+        if 'form_34a_image' in request.FILES:
+            tally.form_34a_image = request.FILES['form_34a_image']
+            tally.save()
+            
         return response.Response(
             {'id': tally.id, 'created': created},
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
@@ -890,6 +907,8 @@ class IncidentListView(views.APIView):
 
     def get(self, request):
         qs = IncidentReport.objects.select_related('reporter').all().order_by('-reported_at')
+        if not request.user.is_admin:
+            qs = qs.filter(reporter=request.user)
         return response.Response([
             {
                 'id': i.id,
@@ -981,3 +1000,105 @@ class CallRecordCreateView(views.APIView):
         target.save(update_fields=['status'])
         
         return response.Response({'success': True}, status=status.HTTP_201_CREATED)
+
+# ─── Events & Rally Check-ins ────────────────────────────────────────────────
+from .models import Event, EventAttendance
+from .serializers import EventSerializer, EventAttendanceSerializer
+
+class EventListView(generics.ListCreateAPIView):
+    permission_classes = [IsAdminUser]
+    queryset = Event.objects.all().order_by('-date')
+    serializer_class = EventSerializer
+
+class EventDetailView(generics.RetrieveAPIView):
+    permission_classes = [IsAdminUser]
+    queryset = Event.objects.all()
+    serializer_class = EventSerializer
+
+class EventAttendanceView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, event_id):
+        attendances = EventAttendance.objects.filter(event_id=event_id).select_related('member')
+        serializer = EventAttendanceSerializer(attendances, many=True)
+        return response.Response(serializer.data)
+
+    def post(self, request, event_id):
+        member_id = request.data.get('member_id')
+        if not member_id:
+            return response.Response({"error": "member_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            event = Event.objects.get(id=event_id)
+            member = Member.objects.get(id=member_id)
+        except (Event.DoesNotExist, Member.DoesNotExist):
+            return response.Response({"error": "Event or Member not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        attendance, created = EventAttendance.objects.get_or_create(event=event, member=member)
+        if not created:
+            return response.Response({"error": "Already checked in"}, status=status.HTTP_400_BAD_REQUEST)
+
+        EventAttendance.objects.create(event=event, member=request.user)
+        return response.Response({"status": "Checked in"}, status=status.HTTP_201_CREATED)
+
+class EmergencyBroadcastView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Get the active broadcast for this specific mobilizer."""
+        broadcasts = EmergencyBroadcast.objects.filter(is_active=True).order_by('-created_at')
+        
+        applicable_broadcast = None
+        for b in broadcasts:
+            if b.target_type == 'global':
+                applicable_broadcast = b
+                break
+            elif b.target_type == 'ward' and request.user.ward in (b.target_wards or []):
+                applicable_broadcast = b
+                break
+            elif b.target_type == 'specific_people' and b.target_members.filter(id=request.user.id).exists():
+                applicable_broadcast = b
+                break
+                
+        if applicable_broadcast:
+            return response.Response(EmergencyBroadcastSerializer(applicable_broadcast).data)
+        return response.Response({"status": "No active broadcasts"}, status=status.HTTP_204_NO_CONTENT)
+
+    def post(self, request):
+        """Admin creates a new targeted broadcast."""
+        if not request.user.is_admin:
+            return response.Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            
+        message = request.data.get('message')
+        severity = request.data.get('severity', 'critical')
+        target_type = request.data.get('target_type', 'global')
+        target_wards = request.data.get('target_wards', [])
+        target_member_ids = request.data.get('target_member_ids', [])
+        
+        if not message:
+            return response.Response({"error": "Message required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        EmergencyBroadcast.objects.filter(is_active=True).update(is_active=False)
+        
+        broadcast = EmergencyBroadcast.objects.create(
+            message=message,
+            severity=severity,
+            target_type=target_type,
+            target_wards=target_wards,
+            created_by=request.user,
+            is_active=True
+        )
+        
+        if target_type == 'specific_people' and target_member_ids:
+            members = Member.objects.filter(id__in=target_member_ids)
+            broadcast.target_members.set(members)
+            
+        return response.Response(EmergencyBroadcastSerializer(broadcast).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        """Admin clears the active broadcast."""
+        if not request.user.is_admin:
+            return response.Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            
+        EmergencyBroadcast.objects.filter(is_active=True).update(is_active=False)
+        return response.Response({"status": "Broadcast cleared"}, status=status.HTTP_200_OK)

@@ -43,6 +43,11 @@ class Member(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_voter_verified = models.BooleanField(default=False)
     has_voted = models.BooleanField(default=False)  # Election-day GOTV strike-off
+    
+    # Voter Sentiment
+    supporter_score = models.IntegerField(null=True, blank=True) # 1-5 scale
+    top_issue = models.CharField(max_length=255, null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = MemberManager()
@@ -110,6 +115,7 @@ class TransportRequest(models.Model):
     ward = models.CharField(max_length=255, blank=True)
     polling_station = models.CharField(max_length=255, blank=True)
     rider_name = models.CharField(max_length=255, blank=True)
+    rider_phone = models.CharField(max_length=20, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -151,6 +157,7 @@ class TallyRecord(models.Model):
     total_votes_cast = models.IntegerField(default=0)
     registered_voters = models.IntegerField(default=0)
     is_verified = models.BooleanField(default=False)
+    form_34a_image = models.ImageField(upload_to='form_34a/', null=True, blank=True)
     notes = models.TextField(blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
@@ -225,3 +232,49 @@ class CallRecord(models.Model):
 
     def __str__(self):
         return f"Call to {self.target.voter_name} - {self.get_outcome_display()}"
+
+# ─── Events & Rally Check-ins ────────────────────────────────────────────────
+class Event(models.Model):
+    name = models.CharField(max_length=255)
+    date = models.DateTimeField()
+    location = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} on {self.date.strftime('%Y-%m-%d')}"
+
+class EventAttendance(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='attendees')
+    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name='events_attended')
+    checked_in_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('event', 'member')
+
+    def __str__(self):
+        return f"{self.member.full_name} at {self.event.name}"
+
+# ─── Emergency Broadcast System ──────────────────────────────────────────────
+class EmergencyBroadcast(models.Model):
+    """Global alert created by HQ to override all mobilizer screens."""
+    SEVERITY_CHOICES = [
+        ('warning', 'Warning (Yellow)'),
+        ('critical', 'Critical (Red)'),
+    ]
+    TARGET_CHOICES = [
+        ('global', 'Global'),
+        ('ward', 'Specific Wards'),
+        ('specific_people', 'Specific People'),
+    ]
+    message = models.TextField()
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default='critical')
+    target_type = models.CharField(max_length=20, choices=TARGET_CHOICES, default='global')
+    target_wards = models.JSONField(blank=True, null=True, help_text="List of ward names")
+    target_members = models.ManyToManyField(Member, blank=True, related_name="targeted_broadcasts")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(Member, on_delete=models.SET_NULL, null=True, related_name='broadcasts_created')
+
+    def __str__(self):
+        return f"[{self.severity.upper()}] {self.message[:50]}..."

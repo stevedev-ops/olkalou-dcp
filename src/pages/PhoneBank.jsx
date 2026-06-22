@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PhoneCall, MapPin, ThumbsUp, HelpCircle, ThumbsDown, UserX, Loader2, Play } from "lucide-react";
+import { PhoneCall, MapPin, ThumbsUp, HelpCircle, ThumbsDown, UserX, Loader2, Play, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 
@@ -49,7 +49,7 @@ export default function PhoneBank() {
 
   return (
     <div className="selection:bg-dcp-green/30">
-      <div className="max-w-3xl mx-auto px-4 space-y-6">
+      <div className="w-full space-y-6">
 
         {/* Header */}
         <div className="relative overflow-hidden bg-slate-900 rounded-[2rem] p-8 border border-slate-800 shadow-2xl text-center">
