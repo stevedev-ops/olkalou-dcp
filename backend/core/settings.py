@@ -36,7 +36,7 @@ SECRET_KEY = env('SECRET_KEY', default='django-insecure-fallback-development-onl
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('DEBUG')
 
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['*'])
 
 
 # Application definition
@@ -182,7 +182,7 @@ REST_FRAMEWORK = {
     }
 }
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG # Only allow all when debugging
+CORS_ALLOW_ALL_ORIGINS = True # Allow all origins globally for Render deployment
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[])
 APPEND_SLASH = False
 
@@ -196,4 +196,6 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
