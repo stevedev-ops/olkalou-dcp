@@ -1,3 +1,7 @@
+from rest_framework.decorators import api_view, permission_classes
+
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework import status, views, response, generics
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Count, Q
@@ -62,7 +66,19 @@ class MemberLoginView(views.APIView):
         if not member:
             return response.Response(
                 {"error": "No member found with that First Name and ID combination."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        if not member.is_active:
+            return response.Response(
+                {"error": "ACCESS DENIED: Your account has been permanently deactivated by HQ."},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not member.is_voter_verified and not member.is_admin:
+            return response.Response(
+                {"error": "You must be a registered and verified voter to log in."},
+                status=status.HTTP_403_FORBIDDEN
             )
 
         token, _ = Token.objects.get_or_create(user=member)
@@ -104,7 +120,50 @@ class MemberRegisterView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 3. Invite Token Check
+        # 3. Check Voter Register with enhanced matching FIRST
+        national_id = data.get('national_id', '')
+        phone = data.get('phone', '')
+        full_name = data.get('full_name', '')
+        matched_record = None
+
+        # Direct match first
+        direct = VoterRecord.objects.filter(
+            Q(id_number=national_id) | Q(phone_number=phone)
+        ).first()
+        
+        if direct:
+            matched_record = direct
+
+        if not matched_record and national_id:
+            # Try masked ID matching (checking first and last digits)
+            id_len = len(national_id)
+            if id_len >= 5:
+                id_pattern = f"{national_id[0]}{'*' * (id_len - 2)}{national_id[-1]}"
+                name_parts = [p for p in full_name.upper().split(' ') if len(p) > 2]
+                potential_matches = list(VoterRecord.objects.filter(id_number=id_pattern))
+
+                # Pass 1: 2+ name parts
+                for record in potential_matches:
+                    record_name_upper = record.full_name.upper()
+                    if sum(1 for part in name_parts if part in record_name_upper) >= 2:
+                        matched_record = record
+                        break
+
+                # Pass 2: 1 name part fallback
+                if not matched_record:
+                    for record in potential_matches:
+                        record_name_upper = record.full_name.upper()
+                        if sum(1 for part in name_parts if part in record_name_upper) >= 1:
+                            matched_record = record
+                            break
+
+        if not matched_record:
+            return response.Response(
+                {"error": "Re-check your information, you made an error."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 4. Invite Token Check
         if invite_token:
             try:
                 invite = Invite.objects.get(id=invite_token)
@@ -115,55 +174,35 @@ class MemberRegisterView(views.APIView):
             except (Invite.DoesNotExist, ValueError):
                 return response.Response({"error": "Invalid invite code."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 4. Create Member
+        # 5. Create Member
         serializer = MemberSerializer(data=data)
         if serializer.is_valid():
             member = serializer.save()
             
-            # Check Voter Register with enhanced matching
-            matched_record = None
+            member.is_voter_verified = True
+            member.official_ward = matched_record.ward or ''
+            member.official_polling_station = matched_record.polling_station or ''
+            
+            if matched_record.gender:
+                member.gender = matched_record.gender
+                
+            member.save()
 
-            # Direct match first
-            direct = VoterRecord.objects.filter(
-                Q(id_number=member.national_id) | Q(phone_number=member.phone)
-            ).first()
-            if direct:
-                matched_record = direct
-
-            if not matched_record:
-                # Try masked ID matching
-                id_len = len(member.national_id)
-                if id_len >= 5:
-                    id_pattern = f"{member.national_id[0]}{'*' * (id_len - 2)}{member.national_id[-1]}"
-                    name_parts = [p for p in member.full_name.upper().split(' ') if len(p) > 2]
-                    potential_matches = list(VoterRecord.objects.filter(id_number=id_pattern))
-
-                    # Pass 1: 2+ name parts
-                    for record in potential_matches:
-                        record_name_upper = record.full_name.upper()
-                        if sum(1 for part in name_parts if part in record_name_upper) >= 2:
-                            matched_record = record
-                            break
-
-                    # Pass 2: 1 name part fallback
-                    if not matched_record:
-                        for record in potential_matches:
-                            record_name_upper = record.full_name.upper()
-                            if sum(1 for part in name_parts if part in record_name_upper) >= 1:
-                                matched_record = record
-                                break
-
-            if matched_record:
-                member.is_voter_verified = True
-                member.official_ward = matched_record.ward or ''
-                member.official_polling_station = matched_record.polling_station or ''
-                member.save()
+            # Update the voter record to unmask ID and phone number
+            matched_record.id_number = member.national_id
+            matched_record.phone_number = member.phone
+            matched_record.save(update_fields=['id_number', 'phone_number'])
 
             token, _ = Token.objects.get_or_create(user=member)
             return response.Response({
                 "token": token.key,
                 "member": serializer.data
             }, status=status.HTTP_201_CREATED)
+            
+        # If we failed to save, un-use the invite
+        if invite_token:
+            Invite.objects.filter(id=invite_token).update(is_used=False)
+            
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class MemberMeView(views.APIView):
@@ -239,9 +278,15 @@ class MemberListView(generics.ListCreateAPIView):
         
         search = self.request.query_params.get('search')
         if search:
-            queryset = queryset.filter(
-                Q(full_name__icontains=search) | Q(national_id__icontains=search)
-            )
+            search = search.strip()
+            if search.isdigit():
+                queryset = queryset.filter(Q(national_id__icontains=search))
+            else:
+                name_parts = [p for p in search.split(' ') if p]
+                for part in name_parts:
+                    queryset = queryset.filter(
+                        Q(full_name__icontains=part) | Q(national_id__icontains=part)
+                    )
         
         voter_status = self.request.query_params.get('voter_status')
         if voter_status == 'verified':
@@ -302,11 +347,20 @@ class VoterRecordListView(generics.ListAPIView):
         queryset = super().get_queryset()
         search = self.request.query_params.get('search')
         if search:
-            queryset = queryset.filter(
-                Q(full_name__icontains=search) | 
-                Q(id_number__icontains=search) | 
-                Q(phone_number__icontains=search)
-            )
+            search = search.strip()
+            if search.isdigit():
+                queryset = queryset.filter(
+                    Q(id_number__icontains=search) | 
+                    Q(phone_number__icontains=search)
+                )
+            else:
+                name_parts = [p for p in search.split(' ') if p]
+                for part in name_parts:
+                    queryset = queryset.filter(
+                        Q(full_name__icontains=part) | 
+                        Q(id_number__icontains=part) | 
+                        Q(phone_number__icontains=part)
+                    )
         
         ward = self.request.query_params.get('ward')
         if ward:
@@ -324,6 +378,9 @@ class ReportStatsView(views.APIView):
         if member_id:
             downline_ids, _ = get_recursive_downline(member_id)
             # Include direct recruits AND their downline
+            base_qs = base_qs.filter(id__in=downline_ids)
+        elif not request.user.is_admin:
+            downline_ids, _ = get_recursive_downline(request.user.id)
             base_qs = base_qs.filter(id__in=downline_ids)
 
         if mode == 'verified':
@@ -386,31 +443,34 @@ class InviteDetailView(generics.RetrieveAPIView):
     lookup_field = 'id'
 
 class VoterLookupView(views.APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request):
         query = request.query_params.get('q', '').strip()
         if not query:
             return response.Response([])
 
-        # Check if query is numeric (ID number search)
-        if query.isdigit():
-            id_len = len(query)
-            if id_len < 5:
-                return response.Response([])
-            id_pattern = f"{query[0]}{'*' * (id_len - 2)}{query[-1]}"
-            queryset = VoterRecord.objects.filter(id_number=id_pattern)[:15]
-        else:
-            # Name-based search (match all name parts of length >= 2)
-            name_parts = [p for p in query.upper().split(' ') if len(p) >= 2]
-            if not name_parts:
-                return response.Response([])
-            
-            queryset = VoterRecord.objects.all()
-            for part in name_parts:
-                queryset = queryset.filter(full_name__icontains=part)
-            
-            queryset = queryset[:15]
+        # Handle numeric queries (ID/Phone) immediately
+        if query.isdigit() and len(query) >= 3:
+            queryset = VoterRecord.objects.filter(
+                Q(id_number__icontains=query) | Q(phone_number__icontains=query)
+            )[:15]
+            return response.Response(VoterRecordSerializer(queryset, many=True).data)
+
+        # Name-based search (match all name parts of length >= 2)
+        name_parts = [p for p in query.upper().split(' ') if len(p) >= 2]
+        if not name_parts:
+            return response.Response([])
+        
+        queryset = VoterRecord.objects.all()
+        for part in name_parts:
+            queryset = queryset.filter(
+                Q(full_name__icontains=part) | 
+                Q(id_number__icontains=part) | 
+                Q(phone_number__icontains=part)
+            )
+        
+        queryset = queryset[:15]
 
         serializer = VoterRecordSerializer(queryset, many=True)
         return response.Response(serializer.data)
@@ -484,10 +544,18 @@ class LeaderboardView(views.APIView):
 
     def get(self, request):
         # Top mobilizers (direct invites, excluding admins/staff)
+        from django.utils import timezone
+        from datetime import timedelta
+        now = timezone.now()
+        seven_days_ago = now - timedelta(days=7)
+
         top_members = (
             Member.objects
             .filter(is_admin=False, is_staff=False)
-            .annotate(recruits_total=Count('recruits'))
+            .annotate(
+                recruits_total=Count('recruits'),
+                recent_recruits_count=Count('recruits', filter=Q(recruits__created_at__gte=seven_days_ago))
+            )
             .order_by('-recruits_total')[:20]
         )
 
@@ -506,6 +574,7 @@ class LeaderboardView(views.APIView):
                     'rank': idx + 1,
                     'id': m.id,
                     'full_name': m.full_name,
+                    'is_active': m.is_active,
                     'ward': m.ward or 'Unknown',
                     'polling_station': m.polling_station or 'Unknown',
                     'direct_recruits': m.recruits_total,
@@ -548,6 +617,7 @@ class GotvListView(views.APIView):
             {
                 'id': m.id,
                 'full_name': m.full_name,
+                    'is_active': m.is_active,
                 'ward': m.official_ward or m.ward or 'Unknown',
                 'polling_station': m.official_polling_station or m.polling_station or 'Unknown',
                 'has_voted': m.has_voted,
@@ -1054,8 +1124,9 @@ class EmergencyBroadcastView(views.APIView):
                 applicable_broadcast = b
                 break
             elif b.target_type == 'ward' and request.user.ward in (b.target_wards or []):
-                applicable_broadcast = b
-                break
+                if not b.target_polling_stations or request.user.polling_station in b.target_polling_stations:
+                    applicable_broadcast = b
+                    break
             elif b.target_type == 'specific_people' and b.target_members.filter(id=request.user.id).exists():
                 applicable_broadcast = b
                 break
@@ -1073,6 +1144,7 @@ class EmergencyBroadcastView(views.APIView):
         severity = request.data.get('severity', 'critical')
         target_type = request.data.get('target_type', 'global')
         target_wards = request.data.get('target_wards', [])
+        target_polling_stations = request.data.get('target_polling_stations', [])
         target_member_ids = request.data.get('target_member_ids', [])
         
         if not message:
@@ -1085,6 +1157,7 @@ class EmergencyBroadcastView(views.APIView):
             severity=severity,
             target_type=target_type,
             target_wards=target_wards,
+            target_polling_stations=target_polling_stations,
             created_by=request.user,
             is_active=True
         )
@@ -1102,3 +1175,300 @@ class EmergencyBroadcastView(views.APIView):
             
         EmergencyBroadcast.objects.filter(is_active=True).update(is_active=False)
         return response.Response({"status": "Broadcast cleared"}, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_wards_and_stations(request):
+    """Returns a dictionary mapping Wards to their unique Polling Stations."""
+    wards_data = VoterRecord.objects.values('ward', 'polling_station').distinct()
+    
+    mapping = {}
+    for entry in wards_data:
+        ward = entry.get('ward')
+        station = entry.get('polling_station')
+        if not ward:
+            continue
+            
+        if ward not in mapping:
+            mapping[ward] = []
+            
+        if station and station not in mapping[ward]:
+            mapping[ward].append(station)
+            
+    sorted_mapping = {w: sorted(s) for w, s in sorted(mapping.items())}
+    return response.Response(sorted_mapping)
+
+
+class MemberToggleActiveView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        if not request.user.is_admin:
+            return response.Response({"error": "Only admins can deactivate members."}, status=status.HTTP_403_FORBIDDEN)
+            
+        try:
+            member = Member.objects.get(pk=pk)
+            # Prevent admin from deactivating themselves
+            if member.id == request.user.id:
+                return response.Response({"error": "You cannot deactivate yourself."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            member.is_active = not member.is_active
+            member.save()
+            return response.Response({"message": "Status updated.", "is_active": member.is_active})
+        except Member.DoesNotExist:
+            return response.Response({"error": "Member not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+class WardHealthInsightsView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        now = timezone.now()
+        forty_eight_hours_ago = now - timedelta(hours=48)
+        ninety_six_hours_ago = now - timedelta(hours=96)
+
+        # Count recruits in current 48h
+        current_period = Member.objects.filter(
+            is_admin=False, is_staff=False,
+            created_at__gte=forty_eight_hours_ago
+        ).values('ward').annotate(count=Count('id'))
+        
+        current_dict = {item['ward']: item['count'] for item in current_period if item['ward']}
+
+        # Count recruits in previous 48h
+        previous_period = Member.objects.filter(
+            is_admin=False, is_staff=False,
+            created_at__gte=ninety_six_hours_ago,
+            created_at__lt=forty_eight_hours_ago
+        ).values('ward').annotate(count=Count('id'))
+
+        previous_dict = {item['ward']: item['count'] for item in previous_period if item['ward']}
+
+        insights = []
+        for ward, current_count in current_dict.items():
+            prev_count = previous_dict.get(ward, 0)
+            
+            # We only care if previous count was meaningful enough to form a trend
+            if prev_count >= 5:
+                drop_ratio = (prev_count - current_count) / prev_count
+                
+                # If velocity dropped by more than 20%
+                if drop_ratio > 0.20:
+                    percent_drop = int(drop_ratio * 100)
+                    insights.append({
+                        "ward": ward,
+                        "type": "warning",
+                        "message": f"Warning: {ward} mobilization velocity has slowed down by {percent_drop}% in the last 48 hours. Current 48h: {current_count} recruits (down from {prev_count}). Recommend deploying additional root mobilizers."
+                    })
+                elif drop_ratio < -0.20:
+                    # Growth
+                    percent_growth = int(abs(drop_ratio) * 100)
+                    insights.append({
+                        "ward": ward,
+                        "type": "success",
+                        "message": f"Positive Trend: {ward} mobilization is accelerating! Up {percent_growth}% in the last 48 hours ({current_count} recruits vs {prev_count})."
+                    })
+
+        # Sort insights (warnings first)
+        insights.sort(key=lambda x: 0 if x['type'] == 'warning' else 1)
+
+        return response.Response({"insights": insights})
+
+
+class FraudDetectionView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        now = timezone.now()
+        forty_eight_hours_ago = now - timedelta(hours=48)
+        
+        recent_recruits = Member.objects.filter(
+            created_at__gte=forty_eight_hours_ago,
+            referred_by__isnull=False
+        ).select_related('referred_by').order_by('referred_by', 'created_at')
+
+        alerts = []
+        last_member = None
+        
+        for member in recent_recruits:
+            if last_member and last_member.referred_by_id == member.referred_by_id:
+                time_diff = (member.created_at - last_member.created_at).total_seconds()
+                
+                # Check 1: Speed anomaly (less than 30 seconds apart)
+                if time_diff < 30:
+                    alerts.append({
+                        "type": "speed_anomaly",
+                        "severity": "high",
+                        "mobilizer_name": member.referred_by.full_name,
+                        "mobilizer_id": member.referred_by_id,
+                        "message": f"Registered {member.full_name} and {last_member.full_name} only {int(time_diff)} seconds apart.",
+                        "timestamp": member.created_at
+                    })
+                
+                # Check 2: Sequential ID anomaly (e.g. 1234567, 1234568)
+                try:
+                    if abs(int(member.national_id) - int(last_member.national_id)) == 1:
+                        alerts.append({
+                            "type": "sequential_id",
+                            "severity": "critical",
+                            "mobilizer_name": member.referred_by.full_name,
+                            "mobilizer_id": member.referred_by_id,
+                            "message": f"Registered sequential IDs: {last_member.national_id} and {member.national_id}.",
+                            "timestamp": member.created_at
+                        })
+                except ValueError:
+                    pass
+
+            last_member = member
+
+        return response.Response({"alerts": alerts})
+
+
+class SaturationPredictionView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        # Total registered from official IEBC data
+        official_totals = VoterRecord.objects.values('polling_station').annotate(total_voters=Count('id'))
+        official_dict = {item['polling_station']: item['total_voters'] for item in official_totals if item['polling_station']}
+
+        # Our recruits
+        recruit_totals = Member.objects.values('polling_station').annotate(total_recruits=Count('id'))
+        
+        stations = []
+        for r in recruit_totals:
+            ps = r['polling_station']
+            if not ps: continue
+            
+            recruits = r['total_recruits']
+            total = official_dict.get(ps, 0)
+            
+            if total > 0:
+                saturation = (recruits / total) * 100
+                stations.append({
+                    "polling_station": ps,
+                    "recruits": recruits,
+                    "total_registered": total,
+                    "saturation_percent": round(saturation, 1)
+                })
+
+        stations.sort(key=lambda x: x['saturation_percent'], reverse=True)
+        
+        secured = [s for s in stations if s['saturation_percent'] >= 50][:5]
+        at_risk = [s for s in stations[::-1] if s['saturation_percent'] < 50][:5]
+
+        return response.Response({
+            "secured": secured,
+            "at_risk": at_risk
+        })
+
+
+class TargetMatchingView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            member = Member.objects.get(pk=pk)
+        except Member.DoesNotExist:
+            return response.Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if not member.full_name or not member.polling_station:
+            return response.Response({"targets": []})
+
+        # Get last name
+        name_parts = member.full_name.strip().split()
+        if not name_parts:
+            return response.Response({"targets": []})
+        
+        last_name = name_parts[-1]
+        if len(last_name) < 3: # Ignore tiny names to prevent massive false positives
+            return response.Response({"targets": []})
+
+        # Get existing member IDs in this station to exclude
+        existing_member_ids = Member.objects.filter(polling_station=member.polling_station).values_list('national_id', flat=True)
+
+        # Search VoterRecord
+        targets = VoterRecord.objects.filter(
+            full_name__icontains=last_name,
+            polling_station=member.polling_station
+        ).exclude(id_number__in=existing_member_ids)[:10]
+
+        target_data = [{"full_name": t.full_name, "id_number": t.id_number} for t in targets]
+
+        return response.Response({"targets": target_data})
+
+
+class DemographicInsightsView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        import datetime
+        from django.db.models import Count, Q
+        
+        current_year = datetime.datetime.now().year
+        
+        base_qs = Member.objects.filter(is_admin=False, is_staff=False)
+        total = base_qs.count()
+        if total == 0:
+            return response.Response({
+                "gender": {"male": 0, "female": 0, "unknown": 0},
+                "age_buckets": {"youth": 0, "adult": 0, "elder": 0, "unknown": 0},
+                "insights": ["No demographic data available yet."]
+            })
+
+        # Gender breakdown
+        male_count = base_qs.filter(gender__iexact='M').count()
+        female_count = base_qs.filter(gender__iexact='F').count()
+        unknown_gender = total - (male_count + female_count)
+
+        # Age breakdown
+        # Youths: 18-35 (current_year - 35 <= yob <= current_year - 18)
+        # Adults: 36-50
+        # Elders: 50+
+        youths = base_qs.filter(yob__gte=current_year - 35).count()
+        adults = base_qs.filter(yob__lt=current_year - 35, yob__gte=current_year - 50).count()
+        elders = base_qs.filter(yob__lt=current_year - 50).count()
+        unknown_age = total - (youths + adults + elders)
+
+        # AI Insights Generation
+        insights = []
+        
+        # Gender insights
+        if female_count > 0 and (female_count / total) < 0.3:
+            insights.append("Warning: Women make up less than 30% of your recruits. Consider deploying more female mobilizers.")
+        elif female_count > 0 and (female_count / total) > 0.5:
+            insights.append("Success: Strong female turnout! Women make up the majority of your enrolled members.")
+            
+        # Age insights
+        if youths > 0 and (youths / total) < 0.2:
+            insights.append("Warning: Low youth enrollment. Youths (18-35) make up less than 20% of your base. Target younger demographics.")
+        elif youths > 0 and (youths / total) > 0.6:
+            insights.append("Insight: Excellent youth mobilization! Over 60% of your base is under 35.")
+            
+        if not insights:
+            insights.append("Insight: Your demographic distribution is currently balanced.")
+
+        # Optional: Station/Ward specific anomaly (Mock AI generation based on top ward)
+        top_ward = base_qs.values('ward').annotate(c=Count('id')).order_by('-c').first()
+        if top_ward and top_ward['ward']:
+            w_name = top_ward['ward']
+            w_youths = base_qs.filter(ward=w_name, yob__gte=current_year - 35).count()
+            if w_youths > 0 and top_ward['c'] > 0:
+                y_pct = (w_youths / top_ward['c']) * 100
+                insights.append(f"AI Alert: {y_pct:.0f}% of your recruits in {w_name} Ward are Youths.")
+
+        return response.Response({
+            "gender": {
+                "male": male_count,
+                "female": female_count,
+                "unknown": unknown_gender
+            },
+            "age_buckets": {
+                "youth": youths,
+                "adult": adults,
+                "elder": elders,
+                "unknown": unknown_age
+            },
+            "insights": insights
+        })
+

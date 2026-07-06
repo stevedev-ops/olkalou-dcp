@@ -7,8 +7,11 @@ class Command(BaseCommand):
     help = 'Import voter register from Excel'
 
     def handle(self, *args, **options):
-        # 1. Import from the complete CSV first
-        csv_path = r'c:\Users\USER1\Desktop\projects\embakasi\shared\embakasi_voters_complete.csv'
+        from django.conf import settings
+        import os
+
+        # 1. Import from the complete CSV first (Place file in root directory)
+        csv_path = os.path.join(settings.BASE_DIR, 'voters_complete.csv')
         total_count = 0
 
         if os.path.exists(csv_path):
@@ -26,6 +29,8 @@ class Command(BaseCommand):
                         first_middle = row.get('first_middle_name', '').strip()
                         ward = row.get('ward', '').strip()
                         polling_station = row.get('polling_centre', '').strip()
+                        dob = row.get('date_of_birth', '').strip() or row.get('dob', '').strip() or row.get('Date of Birth', '').strip()
+                        gender = row.get('gender', '').strip() or row.get('sex', '').strip() or row.get('Sex', '').strip() or row.get('SexElectoral Number', '').strip()
 
                         id_in_name = re.search(r'\b(\d{7,8})\b', first_middle)
                         id_number = id_raw
@@ -38,7 +43,9 @@ class Command(BaseCommand):
                             id_number=id_number,
                             full_name=full_name,
                             ward=ward,
-                            polling_station=polling_station
+                            polling_station=polling_station,
+                            dob=dob,
+                            gender=gender
                         ))
 
                         if len(voter_records) >= batch_size:
@@ -55,7 +62,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f'CSV Error: {str(e)}'))
         
         # 2. Scan for additional Excel files in the register directory
-        base_dir = r'c:\Users\USER1\Desktop\projects\refferal\backend\2022_voter_register'
+        base_dir = os.path.join(settings.BASE_DIR, 'voter_register_excels')
         if os.path.exists(base_dir):
             self.stdout.write(f'Scanning for additional Excel files in {base_dir}...')
             excel_count = 0
@@ -71,21 +78,58 @@ class Command(BaseCommand):
                         try:
                             wb = openpyxl.load_workbook(file_path, data_only=True)
                             ws = wb.active
-                            for row in ws.iter_rows(min_row=2):
-                                name_val = row[1].value
-                                if not name_val: continue
+                            current_ward = ward_name
+                            current_station = "Unknown"
+                            
+                            for row in ws.iter_rows(min_row=1):
+                                name_val = row[1].value if len(row) > 1 else None
                                 
-                                # Basic mapping for extra lists
-                                num_candidate = str(row[4].value if len(row) > 4 else row[0].value).strip()
-                                id_val = num_candidate if 7 <= len(num_candidate) <= 8 else None
-                                phone_val = num_candidate if len(num_candidate) >= 9 else None
+                                # Convert row to string to catch PDF-dumped cells
+                                row_text = " ".join([str(c.value).strip() for c in row if c.value])
+                                if not row_text:
+                                    continue
+                                    
+                                # 1. Try to detect Ward from text (e.g. "0453 - KARAU")
+                                ward_match = re.search(r'^\d{3,4}\s*-\s*([A-Z\s]+)$', row_text.strip())
+                                if ward_match and "PRIMARY" not in row_text and "SCHOOL" not in row_text:
+                                    current_ward = ward_match.group(1).strip().title()
+                                    
+                                # 2. Try to detect Polling Station
+                                if ward_match and ("PRIMARY" in row_text or "SCHOOL" in row_text or "NURSERY" in row_text or "CENTRE" in row_text):
+                                    current_station = ward_match.group(1).strip().title()
+                                    
+                                # 3. Check if it's a PDF-dumped voter line!
+                                voter_match = re.search(r"(\d{1,4})(ID|PP)(\d\*{4,8}\d)([A-Z\s\-]+?)(\d{4})([MF])(\d+-\d+)", row_text)
+                                
+                                if voter_match:
+                                    id_val = voter_match.group(3)
+                                    raw_name = voter_match.group(4)
+                                    # Insert space between lowercase and uppercase letters
+                                    name_val = re.sub(r"([a-z])([A-Z])", r"\1 \2", raw_name) 
+                                    dob_val = voter_match.group(5)
+                                    gender_val = voter_match.group(6)
+                                    
+                                    _, created = VoterRecord.objects.get_or_create(
+                                        full_name=name_val.strip(),
+                                        id_number=id_val,
+                                        defaults={'ward': current_ward, 'polling_station': current_station, 'dob': dob_val, 'gender': gender_val}
+                                    )
+                                    if created: excel_count += 1
+                                    
+                                elif name_val and len(row) >= 4:
+                                    # Standard Excel Fallback
+                                    num_candidate = str(row[4].value if len(row) > 4 else row[0].value).strip()
+                                    id_val = num_candidate if 7 <= len(num_candidate) <= 8 else None
+                                    phone_val = num_candidate if len(num_candidate) >= 9 else None
+                                    dob_val = str(row[2].value).strip() if len(row) > 2 and row[2].value else None
+                                    gender_val = str(row[3].value).strip() if len(row) > 3 and row[3].value else None
 
-                                _, created = VoterRecord.objects.get_or_create(
-                                    full_name=str(name_val).strip(),
-                                    id_number=id_val,
-                                    defaults={'ward': ward_name, 'phone_number': phone_val}
-                                )
-                                if created: excel_count += 1
+                                    _, created = VoterRecord.objects.get_or_create(
+                                        full_name=str(name_val).strip(),
+                                        id_number=id_val,
+                                        defaults={'ward': current_ward, 'polling_station': current_station, 'phone_number': phone_val, 'dob': dob_val, 'gender': gender_val}
+                                    )
+                                    if created: excel_count += 1
                         except Exception as e:
                             self.stdout.write(self.style.ERROR(f'    Error: {str(e)}'))
             

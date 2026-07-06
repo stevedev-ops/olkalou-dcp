@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('members/<int:pk>/toggle-active/', views.MemberToggleActiveView.as_view(), name='toggle-member-active'),
     path('login', views.MemberLoginView.as_view(), name='login'),
     path('register', views.MemberRegisterView.as_view(), name='register'),
     path('members/me', views.MemberMeView.as_view(), name='member-me'),
@@ -12,6 +13,13 @@ urlpatterns = [
     path('members/<int:pk>', views.MemberDetailView.as_view(), name='member-detail'),
     path('stats', views.SystemStatsView.as_view(), name='stats'),
     path('stats/reports', views.ReportStatsView.as_view(), name='report-stats'),
+    path('stats/ward-health', views.WardHealthInsightsView.as_view(), name='ward-health'),
+    path('stats/demographics', views.DemographicInsightsView.as_view(), name='demographics'),
+
+    path('stats/fraud-alerts', views.FraudDetectionView.as_view(), name='fraud-alerts'),
+    path('stats/saturation', views.SaturationPredictionView.as_view(), name='saturation'),
+    path('members/<int:pk>/targets', views.TargetMatchingView.as_view(), name='targets'),
+
     path('invites', views.InviteCreateView.as_view(), name='invite-create'),
     path('invites/<uuid:id>', views.InviteDetailView.as_view(), name='invite-detail'),
     path('voter-records', views.VoterRecordListView.as_view(), name='voter-records'),
@@ -47,4 +55,5 @@ urlpatterns = [
     path('events/<int:event_id>/attendance', views.EventAttendanceView.as_view(), name='event-attendance'),
     # Emergency Broadcast
     path('broadcasts', views.EmergencyBroadcastView.as_view(), name='emergency-broadcasts'),
+    path('wards-and-stations', views.get_wards_and_stations, name='wards-and-stations'),
 ]

@@ -28,7 +28,7 @@ class InviteSerializer(serializers.ModelSerializer):
 class VoterRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoterRecord
-        fields = ['id', 'id_number', 'phone_number', 'full_name', 'ward', 'polling_station', 'created_at']
+        fields = ['id', 'id_number', 'phone_number', 'full_name', 'ward', 'polling_station', 'dob', 'gender', 'created_at']
 
 class EventSerializer(serializers.ModelSerializer):
     attendees_count = serializers.SerializerMethodField()
@@ -54,4 +54,5 @@ class EmergencyBroadcastSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EmergencyBroadcast
-        fields = ['id', 'message', 'severity', 'target_type', 'target_wards', 'target_members', 'is_active', 'created_at', 'created_by', 'created_by_name']
+        fields = ['id', 'message', 'severity', 'target_type', 'target_wards', 'target_polling_stations', 'target_members', 'is_active', 'created_at', 'created_by', 'created_by_name']
+        read_only_fields = ['created_by']

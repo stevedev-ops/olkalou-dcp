@@ -1,0 +1,22 @@
+{
+  "short_name": "DCP Ol Kalou",
+  "name": "DCP Ol Kalou Referral Platform",
+  "icons": [
+    {
+      "src": "/192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#1b2a40",
+  "background_color": "#020617"
+}

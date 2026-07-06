@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --dcp-green: #00843D;
+    --dcp-brown: #9E2A2B;
+    --dcp-black: #000000;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 font-outfit antialiased selection:bg-dcp-green/30;
+  }
+
+  input, select, textarea {
+    @apply text-slate-900;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-8 py-4 bg-dcp-green text-white font-bold uppercase tracking-widest rounded-xl 
+           transition-all duration-300 hover:bg-opacity-90 hover:shadow-lg active:scale-95
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .card-official {
+    @apply bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden;
+  }
+
+  .input-official {
+    @apply w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-slate-900 
+           placeholder:text-slate-400 outline-none transition-all duration-200
+           focus:border-dcp-green focus:ring-1 focus:ring-dcp-green;
+  }
+
+  .label-official {
+    @apply block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5;
+  }
+
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148,163,184,.45) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148,163,184,.45);
+    border-radius: 9999px;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-slate-100;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full hover:bg-slate-400;
+}
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white;
+  }
+  
+  /* Hide Admin Sidebar and Header */
+  header, nav, aside, .print\:hidden {
+    display: none !important;
+  }
+
+  /* Expand main area */
+  main, .flex-1 {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .print-page {
+    page-break-after: always;
+    page-break-inside: avoid;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 2cm !important;
+  }
+
+  /* Don't break on the last page */
+  .print-page:last-child {
+    page-break-after: auto;
+  }
+}

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: ol-kalou-backend
+    env: python
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && python create_users.py
+    startCommand: gunicorn core.wsgi --log-file -
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ol-kalou-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "*" # Change this to your frontend domain once it's live
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://ol-kalou-frontend.vercel.app,https://olkaloudcpgetoutthevotenetwork.org,https://www.olkaloudcpgetoutthevotenetwork.org"
+      
+databases:
+  - name: ol-kalou-db
+    databaseName: olkalou
+    user: olkalou
