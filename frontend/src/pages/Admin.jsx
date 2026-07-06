@@ -279,7 +279,6 @@ export default function Admin({ onLogout }) {
   const [hasMoreVoters, setHasMoreVoters] = useState(true);
   const [loadingVoters, setLoadingVoters] = useState(false);
   const [voterSearch, setVoterSearch] = useState("");
-  const [voterWardFilter, setVoterWardFilter] = useState("");
 
   // Overview extras
   const [recentMembers, setRecentMembers] = useState([]);
@@ -404,12 +403,11 @@ export default function Admin({ onLogout }) {
 
 
   // Fetch Voter Records
-  const loadVoterRecordsPage = useCallback(async (pageIdx, q = "", ward = "") => {
+  const loadVoterRecordsPage = useCallback(async (pageIdx, q = "") => {
     setLoadingVoters(true);
     try {
       const { data, error } = await api.getVoterRecords({ 
         search: q,
-        ward: ward,
         page: pageIdx + 1
       });
       if (data) {
@@ -491,11 +489,11 @@ export default function Admin({ onLogout }) {
   useEffect(() => {
     if (activeTab === "voter-registry") {
       const timer = setTimeout(() => {
-        loadVoterRecordsPage(0, voterSearch, voterWardFilter);
+        loadVoterRecordsPage(0, voterSearch);
       }, 400);
       return () => clearTimeout(timer);
     }
-  }, [activeTab, voterSearch, voterWardFilter, loadVoterRecordsPage]);
+  }, [activeTab, voterSearch, loadVoterRecordsPage]);
 
   // Deep Network Analytics logic
   const computeNetworkStats = useCallback(async (memberId) => {
@@ -1197,20 +1195,10 @@ export default function Admin({ onLogout }) {
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
                       <input
                         type="text"
-                        placeholder="Search 2022 voter database by name, ID, or phone..."
+                        placeholder="Search 2022 voter database by name, ID, phone, or ward..."
                         className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:border-dcp-green/50 focus:ring-4 focus:ring-dcp-green/10 transition-all font-bold text-sm tracking-wider uppercase"
                         value={voterSearch}
                         onChange={(e) => setVoterSearch(e.target.value)}
-                      />
-                    </div>
-                    <div className="relative min-w-[200px]">
-                      <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                      <input
-                        type="text"
-                        placeholder="Filter by ward..."
-                        className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl outline-none focus:border-dcp-green/50 focus:ring-4 focus:ring-dcp-green/10 transition-all font-bold text-sm tracking-wider uppercase"
-                        value={voterWardFilter}
-                        onChange={(e) => setVoterWardFilter(e.target.value)}
                       />
                     </div>
                   </div>
@@ -1223,7 +1211,7 @@ export default function Admin({ onLogout }) {
                       </div>
                       <p className="font-black text-slate-900 text-lg uppercase tracking-tight mb-2">No Voter Records Found</p>
                       
-                      {!voterSearch && !voterWardFilter ? (
+                      {!voterSearch ? (
                         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 max-w-md mt-4">
                           <p className="text-sm text-slate-600 mb-3 font-bold">
                             The 2022 Official Database has not been loaded into this environment.
@@ -1269,7 +1257,7 @@ export default function Admin({ onLogout }) {
                   {hasMoreVoters && (
                     <div className="p-8 flex justify-center">
                       <button
-                        onClick={() => loadVoterRecordsPage(voterPage + 1, voterSearch, voterWardFilter)}
+                        onClick={() => loadVoterRecordsPage(voterPage + 1, voterSearch)}
                         disabled={loadingVoters}
                         className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-50 shadow-lg"
                       >

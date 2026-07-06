@@ -359,7 +359,8 @@ class VoterRecordListView(generics.ListAPIView):
                     queryset = queryset.filter(
                         Q(full_name__icontains=part) | 
                         Q(id_number__icontains=part) | 
-                        Q(phone_number__icontains=part)
+                        Q(phone_number__icontains=part) |
+                        Q(ward__icontains=part)
                     )
         
         ward = self.request.query_params.get('ward')
