@@ -678,8 +678,8 @@ export default function Admin({ onLogout }) {
                           <ShieldCheck size={14} className="text-blue-400" /> Switch to Security
                        </button>
                      ) : (
-                       <button onClick={() => { setActiveTab('overview'); if(window.innerWidth < 768) setIsSidebarOpen(false); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors text-[10px] font-black uppercase tracking-widest mt-2 text-white border border-slate-700 shadow-md">
-                          <LayoutDashboard size={14} className="text-dcp-green" /> Switch to Overall
+                       <button onClick={() => { setActiveTab('all'); if(window.innerWidth < 768) setIsSidebarOpen(false); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors text-[10px] font-black uppercase tracking-widest mt-2 text-white border border-slate-700 shadow-md">
+                          <Users size={14} className="text-dcp-green" /> Switch to All
                        </button>
                      )}
                      <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-[10px] font-bold uppercase tracking-widest mt-2">
