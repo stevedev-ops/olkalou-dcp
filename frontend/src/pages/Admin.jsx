@@ -1511,8 +1511,8 @@ export default function Admin({ onLogout }) {
                                 }}
                               >
                                 <option value="">-- Deploy Ward --</option>
-                                {wardStationMap && wardStationMap.map(w => (
-                                  <option key={w.id} value={w.name}>{w.label}</option>
+                                {wardStationMap && Object.keys(wardStationMap).map(ward => (
+                                  <option key={ward} value={ward}>{ward}</option>
                                 ))}
                               </select>
 
@@ -1530,7 +1530,7 @@ export default function Admin({ onLogout }) {
                               >
                                 <option value="">-- Deploy Station --</option>
                                 {selectedMember.ward && wardStationMap && 
-                                 (wardStationMap.find(w => w.name === selectedMember.ward)?.centers || []).map(s => (
+                                 (wardStationMap[selectedMember.ward] || []).map(s => (
                                   <option key={s} value={s}>{s}</option>
                                 ))}
                               </select>
@@ -1662,12 +1662,12 @@ export default function Admin({ onLogout }) {
                         <option value="ward_commander">Ward Commander</option>
                       </select>
                       <select name="ward" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition" onChange={(e) => {
-                         const stations = (wardStationMap.find(w => w.name === e.target.value)?.centers || []);
+                         const stations = (wardStationMap[e.target.value] || []);
                          const sSelect = document.getElementById('sec_station_select');
                          sSelect.innerHTML = '<option value="">- Select Station -</option>' + stations.map(s => `<option value="${s}">${s}</option>`).join('');
                       }}>
                         <option value="">- Select Ward -</option>
-                        {wardStationMap && wardStationMap.map(w => <option key={w.id} value={w.name}>{w.label}</option>)}
+                        {wardStationMap && Object.keys(wardStationMap).map(ward => <option key={ward} value={ward}>{ward}</option>)}
                       </select>
                     </div>
                     <select id="sec_station_select" name="polling_station" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition">
