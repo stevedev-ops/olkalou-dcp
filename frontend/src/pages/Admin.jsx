@@ -1519,7 +1519,7 @@ export default function Admin({ onLogout }) {
                               <select
                                 className="w-full bg-slate-950 border border-slate-800 text-slate-400 text-[10px] font-bold p-3 rounded-xl outline-none"
                                 value={selectedMember.polling_station || ''}
-                                disabled={!selectedMember.ward}
+                                disabled={!selectedMember.ward || selectedMember.security_rank === 'ward_commander'}
                                 onChange={(e) => {
                                   api.updateMemberRole(selectedMember.id, { polling_station: e.target.value })
                                     .then(() => {
@@ -1655,7 +1655,15 @@ export default function Admin({ onLogout }) {
                     <input name="phone" placeholder="Phone Number" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition" />
                     
                     <div className="grid grid-cols-2 gap-4">
-                      <select name="security_rank" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition">
+                      <select name="security_rank" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition" onChange={(e) => {
+                         const sSelect = document.getElementById('sec_station_select');
+                         if (e.target.value === 'ward_commander') {
+                             sSelect.disabled = true;
+                             sSelect.value = '';
+                         } else {
+                             sSelect.disabled = false;
+                         }
+                      }}>
                         <option value="">- Select Rank -</option>
                         <option value="guard">Guard</option>
                         <option value="station_commander">Station Commander</option>
