@@ -1557,26 +1557,6 @@ export default function Admin({ onLogout }) {
                             </div>
                           </>
                         )}
-                          <div className="flex items-center justify-between bg-black/40 p-3 rounded-xl border border-white/5">
-                            <div>
-                              <p className="text-xs font-bold text-white">Security Only Mode</p>
-                              <p className="text-[9px] text-slate-500">Hides campaign tools</p>
-                            </div>
-                            <button 
-                              onClick={() => {
-                                const newVal = !selectedMember.is_security_only;
-                                api.updateMemberRole(selectedMember.id, { is_security_only: newVal })
-                                  .then(() => {
-                                    toast.success(newVal ? 'Locked to security only' : 'Campaign tools enabled');
-                                    setSelectedMember({...selectedMember, is_security_only: newVal});
-                                  });
-                              }}
-                              className={`w-12 h-6 rounded-full transition-colors relative ${selectedMember.is_security_only ? 'bg-dcp-green' : 'bg-slate-700'}`}
-                            >
-                              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${selectedMember.is_security_only ? 'left-7' : 'left-1'}`} />
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -1702,6 +1682,7 @@ export default function Admin({ onLogout }) {
             </motion.div>
           </motion.div>
         )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showAddModal && (
