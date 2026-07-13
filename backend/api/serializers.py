@@ -13,7 +13,7 @@ class MemberSerializer(serializers.ModelSerializer):
             'ward', 'polling_station',
             'official_ward', 'official_polling_station',
             'referral_code', 'referred_by', 'is_voter_verified', 'created_at',
-            'recruits_count', 'referrer_name', 'is_admin', 'is_staff',
+            'recruits_count', 'referrer_name', 'is_admin', 'is_staff', 'is_security', 'security_rank', 'is_security_only',
             'supporter_score', 'top_issue'
         ]
 

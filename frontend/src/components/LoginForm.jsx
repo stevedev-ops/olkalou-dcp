@@ -38,6 +38,8 @@ export default function LoginForm({ onLogin }) {
       
       if (user.is_admin) {
         navigate("/admin", { replace: true });
+      } else if (user.security_rank && user.security_rank !== 'none') {
+        navigate("/security", { replace: true });
       } else {
         navigate("/dashboard", { replace: true });
       }

@@ -224,4 +224,16 @@ export const api = {
 
   getWardsAndStations: () =>
     request('/wards-and-stations'),
+    
+  // Security Logs
+  getSecurityLogs: () =>
+    request('/security-logs'),
+  submitSecurityLog: (data) =>
+    request('/security-logs', { method: 'POST', body: data }),
+  resolveSecurityLog: (id, resolution_action) =>
+    request(`/security-logs/${id}`, { method: 'PATCH', body: { resolution_action } }),
+  getSecurityPersonnel: () =>
+    request('/security-personnel'),
+  getSecurityMIA: () =>
+    request('/security-mia'),
 };

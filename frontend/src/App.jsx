@@ -20,6 +20,8 @@ const SmsExport = lazy(() => import('./pages/SmsExport'));
 const ContactMatcher = lazy(() => import('./pages/ContactMatcher'));
 const Incidents = lazy(() => import('./pages/Incidents'));
 const PhoneBank = lazy(() => import('./pages/PhoneBank'));
+const SecurityDashboard = lazy(() => import('./pages/SecurityDashboard'));
+const SecurityCommand = lazy(() => import('./pages/SecurityCommand'));
 const CheatSheets = lazy(() => import('./pages/CheatSheets'));
 import { api } from "./lib/api";
 import { motion, AnimatePresence } from "framer-motion";
@@ -60,6 +62,8 @@ const NAV_GROUPS = [
   {
     labelKey: "intelligence",
     items: [
+      { to: "/security", icon: Shield, labelKey: "nav_security" },
+      { to: "/security-command", icon: Shield, labelKey: "nav_sec_command" },
       { to: "/incidents", icon: AlertTriangle, labelKey: "nav_alerts" },
       { to: "/phonebank", icon: Phone,         labelKey: "nav_phonebank" },
       { to: "/matcher",   icon: Link2,         labelKey: "nav_matcher" },
@@ -71,6 +75,15 @@ const NAV_GROUPS = [
 // ── Sidebar component ───────────────────────────────────────────────────────
 function MemberSidebar({ profile, onLogout, isOpen, onClose }) {
   const { t } = useLanguage();
+  const isSecurityOnly = profile?.is_security_only;
+  
+  const filteredNavGroups = NAV_GROUPS.filter(group => {
+    if (isSecurityOnly) {
+      return group.labelKey === 'intelligence';
+    }
+    return true;
+  });
+
   return (
     <>
       {/* Dark overlay — mobile only */}
@@ -119,7 +132,7 @@ function MemberSidebar({ profile, onLogout, isOpen, onClose }) {
 
             {/* Nav links */}
             <nav className="flex-1 overflow-y-auto p-3">
-              {NAV_GROUPS.map(group => (
+              {filteredNavGroups.map(group => (
                 <div key={group.labelKey}>
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] px-3 pt-5 pb-2">
                     {t(group.labelKey)}
@@ -341,6 +354,16 @@ function App() {
     }
     if (!memberId) return <Navigate to="/login" />;
     if (memberProfile?.is_admin) return <Navigate to="/admin" replace />;
+    
+    // If security only, prevent access to non-security routes by checking the current URL
+    if (memberProfile?.is_security_only) {
+       const allowedPaths = ['/security', '/incidents', '/phonebank', '/matcher', '/sms'];
+       const currentPath = window.location.pathname;
+       if (!allowedPaths.includes(currentPath)) {
+          return <Navigate to="/security" replace />;
+       }
+    }
+    
     return el;
   };
 
@@ -451,6 +474,8 @@ function App() {
             <Route path="/tally"      element={authed(<Pvt        memberId={memberId} />)} />
             <Route path="/incidents"  element={authed(<Incidents />)} />
             <Route path="/phonebank"  element={authed(<PhoneBank />)} />
+            <Route path="/security"  element={authed(<SecurityDashboard profile={memberProfile} />)} />
+            <Route path="/security-command"  element={authed(<SecurityCommand />)} />
             <Route path="/matcher"    element={authed(<ContactMatcher />)} />
             <Route path="/sms"        element={authed(<SmsExport />)} />
             <Route path="/leaderboard" element={authed(<Leaderboard memberId={memberId} />)} />

@@ -5,7 +5,7 @@ from datetime import timedelta
 from rest_framework import status, views, response, generics
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Count, Q
-from .models import Member, Invite, VoterRecord, CanvassAssignment, TransportRequest, PollingAgent, TallyRecord, IncidentReport, PhoneBankTarget, CallRecord, EmergencyBroadcast
+from .models import Member, Invite, VoterRecord, CanvassAssignment, TransportRequest, PollingAgent, TallyRecord, IncidentReport, PhoneBankTarget, CallRecord, EmergencyBroadcast, SecurityLog
 from .serializers import MemberSerializer, InviteSerializer, VoterRecordSerializer, EventSerializer, EmergencyBroadcastSerializer
 
 from rest_framework.authtoken.models import Token
@@ -157,7 +157,9 @@ class MemberRegisterView(views.APIView):
                             matched_record = record
                             break
 
-        if not matched_record:
+        is_security_deployment = data.get('is_security_only', False)
+
+        if not matched_record and not is_security_deployment:
             return response.Response(
                 {"error": "Re-check your information, you made an error."},
                 status=status.HTTP_400_BAD_REQUEST
@@ -179,19 +181,20 @@ class MemberRegisterView(views.APIView):
         if serializer.is_valid():
             member = serializer.save()
             
-            member.is_voter_verified = True
-            member.official_ward = matched_record.ward or ''
-            member.official_polling_station = matched_record.polling_station or ''
-            
-            if matched_record.gender:
-                member.gender = matched_record.gender
-                
-            member.save()
+            if not is_security_deployment and matched_record:
+                member.is_voter_verified = True
+                member.official_ward = matched_record.ward or ''
+                member.official_polling_station = matched_record.polling_station or ''
+                if matched_record.gender:
+                    member.gender = matched_record.gender
+                member.save()
 
-            # Update the voter record to unmask ID and phone number
-            matched_record.id_number = member.national_id
-            matched_record.phone_number = member.phone
-            matched_record.save(update_fields=['id_number', 'phone_number'])
+                matched_record.id_number = member.national_id
+                matched_record.phone_number = member.phone
+                matched_record.save(update_fields=['id_number', 'phone_number'])
+            else:
+                member.is_voter_verified = False
+                member.save()
 
             token, _ = Token.objects.get_or_create(user=member)
             return response.Response({
@@ -990,6 +993,10 @@ class IncidentListView(views.APIView):
                 'description': i.description,
                 'status': i.status,
                 'reported_at': i.reported_at,
+                'latitude': i.latitude,
+                'longitude': i.longitude,
+                'image': request.build_absolute_uri(i.image.url) if i.image else None,
+                'video': request.build_absolute_uri(i.video.url) if i.video else None,
             }
             for i in qs
         ])
@@ -1002,7 +1009,18 @@ class IncidentListView(views.APIView):
             ward=d.get('ward', request.user.ward or ''),
             polling_station=d.get('polling_station', request.user.polling_station or ''),
             description=d.get('description', ''),
+            latitude=d.get('latitude'),
+            longitude=d.get('longitude'),
         )
+        
+        if 'image' in request.FILES:
+            incident.image = request.FILES['image']
+        if 'video' in request.FILES:
+            incident.video = request.FILES['video']
+            
+        if 'image' in request.FILES or 'video' in request.FILES:
+            incident.save()
+            
         return response.Response({'id': incident.id}, status=status.HTTP_201_CREATED)
 
 class IncidentDetailView(views.APIView):
@@ -1209,7 +1227,6 @@ class MemberToggleActiveView(views.APIView):
             
         try:
             member = Member.objects.get(pk=pk)
-            # Prevent admin from deactivating themselves
             if member.id == request.user.id:
                 return response.Response({"error": "You cannot deactivate yourself."}, status=status.HTTP_400_BAD_REQUEST)
                 
@@ -1218,6 +1235,38 @@ class MemberToggleActiveView(views.APIView):
             return response.Response({"message": "Status updated.", "is_active": member.is_active})
         except Member.DoesNotExist:
             return response.Response({"error": "Member not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    def patch(self, request, pk):
+        if not request.user.is_admin:
+            return response.Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+            
+        try:
+            member = Member.objects.get(pk=pk)
+        except Member.DoesNotExist:
+            return response.Response({"error": "Member not found."}, status=status.HTTP_404_NOT_FOUND)
+            
+        d = request.data
+        update_fields = []
+        if 'security_rank' in d:
+            member.security_rank = d['security_rank']
+            update_fields.append('security_rank')
+        if 'is_security_only' in d:
+            member.is_security_only = d['is_security_only']
+            update_fields.append('is_security_only')
+        if 'ward' in d:
+            member.ward = d['ward']
+            update_fields.append('ward')
+        if 'polling_station' in d:
+            member.polling_station = d['polling_station']
+            update_fields.append('polling_station')
+            
+        if update_fields:
+            member.save(update_fields=update_fields)
+            
+        return response.Response({
+            'security_rank': member.security_rank,
+            'is_security_only': member.is_security_only
+        })
 
 
 class WardHealthInsightsView(views.APIView):
@@ -1473,3 +1522,117 @@ class DemographicInsightsView(views.APIView):
             "insights": insights
         })
 
+
+# ─── Security Enhancements (Guards / Post Commands) ──────────────────────────
+class SecurityLogListView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = SecurityLog.objects.select_related('guard').all().order_by('-logged_at')
+        user = request.user
+        if not user.is_admin:
+            if user.security_rank == 'ward_commander':
+                qs = qs.filter(ward=user.ward)
+            elif user.security_rank == 'station_commander':
+                qs = qs.filter(polling_station=user.polling_station)
+            else:
+                qs = qs.filter(guard=user)
+            
+        return response.Response([
+            {
+                'id': log.id,
+                'guard_name': log.guard.full_name,
+                'guard_phone': log.guard.phone,
+                'ward': log.ward,
+                'polling_station': log.polling_station,
+                'status': log.status,
+                'notes': log.notes,
+                'logged_at': log.logged_at,
+                'latitude': log.latitude,
+                'longitude': log.longitude,
+                'resolution_action': log.resolution_action,
+            }
+            for log in qs[:100]  # Return last 100 logs
+        ])
+
+    def post(self, request):
+        if not request.user.is_security and not request.user.is_admin:
+            return response.Response({"error": "Forbidden. Security personnel only."}, status=status.HTTP_403_FORBIDDEN)
+            
+        d = request.data
+        log = SecurityLog.objects.create(
+            guard=request.user,
+            ward=d.get('ward', request.user.ward or ''),
+            polling_station=d.get('polling_station', request.user.polling_station or ''),
+            status=d.get('status', 'all_clear'),
+            notes=d.get('notes', ''),
+            latitude=d.get('latitude'),
+            longitude=d.get('longitude'),
+        )
+        return response.Response({'id': log.id, 'status': log.status}, status=status.HTTP_201_CREATED)
+
+class SecurityLogDetailView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, pk):
+        try:
+            log = SecurityLog.objects.get(pk=pk)
+        except SecurityLog.DoesNotExist:
+            return response.Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+        log.resolution_action = request.data.get('resolution_action', log.resolution_action)
+        log.save(update_fields=['resolution_action'])
+        return response.Response({'id': log.id, 'resolution_action': log.resolution_action})
+
+class SecurityPersonnelListView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.is_admin:
+            qs = Member.objects.filter(security_rank__in=['ward_commander', 'station_commander', 'guard'])
+        elif user.security_rank == 'ward_commander':
+            # See station commanders and guards in their ward
+            qs = Member.objects.filter(ward=user.ward, security_rank__in=['station_commander', 'guard'])
+        elif user.security_rank == 'station_commander':
+            # See guards in their station
+            qs = Member.objects.filter(polling_station=user.polling_station, security_rank='guard')
+        else:
+            return response.Response([])
+
+        return response.Response([
+            {
+                'id': m.id,
+                'full_name': m.full_name,
+                'phone': m.phone,
+                'security_rank': m.security_rank,
+                'polling_station': m.polling_station,
+                'ward': m.ward
+            }
+            for m in qs
+        ])
+
+class SecurityMIAView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        thirty_mins_ago = timezone.now() - timedelta(minutes=30)
+        
+        # Get all security personnel
+        security_members = Member.objects.exclude(security_rank='none')
+        
+        mia_list = []
+        for m in security_members:
+            # Check if they have any logs in the last 30 mins
+            has_recent_log = SecurityLog.objects.filter(guard=m, logged_at__gte=thirty_mins_ago).exists()
+            if not has_recent_log:
+                mia_list.append({
+                    'id': m.id,
+                    'full_name': m.full_name,
+                    'phone': m.phone,
+                    'ward': m.ward,
+                    'polling_station': m.polling_station,
+                    'security_rank': m.security_rank
+                })
+                
+        return response.Response(mia_list)

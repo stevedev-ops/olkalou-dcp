@@ -56,4 +56,9 @@ urlpatterns = [
     # Emergency Broadcast
     path('broadcasts', views.EmergencyBroadcastView.as_view(), name='emergency-broadcasts'),
     path('wards-and-stations', views.get_wards_and_stations, name='wards-and-stations'),
+    # Security Logs
+    path('security-logs', views.SecurityLogListView.as_view(), name='security-logs-list'),
+    path('security-logs/<int:pk>', views.SecurityLogDetailView.as_view(), name='security-logs-detail'),
+    path('security-personnel', views.SecurityPersonnelListView.as_view(), name='security-personnel-list'),
+    path('security-mia', views.SecurityMIAView.as_view(), name='security-mia'),
 ]

@@ -19,7 +19,7 @@ export default function Incidents({ isAdmin = false }) {
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false);
   
-  const [form, setForm] = useState({ incident_type: "kiems_failure", ward: "", polling_station: "", description: "" });
+  const [form, setForm] = useState({ incident_type: "kiems_failure", ward: "", polling_station: "", description: "", image: null, video: null });
   const availableStations = form.ward ? wardsWithCenters.find(w => w.name === form.ward)?.centers || [] : [];
 
   const load = useCallback(async () => {
@@ -36,11 +36,30 @@ export default function Incidents({ isAdmin = false }) {
       toast.error("Ward and description are required.");
       return;
     }
-    const { error } = await api.reportIncident(form);
+    
+    const formData = new FormData();
+    formData.append("incident_type", form.incident_type);
+    formData.append("ward", form.ward);
+    formData.append("polling_station", form.polling_station);
+    formData.append("description", form.description);
+    if (form.image) formData.append("image", form.image);
+    if (form.video) formData.append("video", form.video);
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+      });
+      formData.append("latitude", position.coords.latitude);
+      formData.append("longitude", position.coords.longitude);
+    } catch (e) {
+      console.warn("Could not get GPS coordinates");
+    }
+
+    const { error } = await api.reportIncident(formData);
     if (error) { toast.error("Failed to report incident."); return; }
     toast.success("Incident reported to HQ!");
     setShowReport(false);
-    setForm({ incident_type: "kiems_failure", ward: "", polling_station: "", description: "" });
+    setForm({ incident_type: "kiems_failure", ward: "", polling_station: "", description: "", image: null, video: null });
     load();
   };
 
@@ -108,6 +127,16 @@ export default function Incidents({ isAdmin = false }) {
                     placeholder="Describe exactly what happened..."
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-red-400 transition resize-none" />
                 </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Attach Photo</label>
+                  <input type="file" accept="image/*" onChange={e => setForm(f => ({ ...f, image: e.target.files[0] }))}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-red-400 transition file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-red-50 file:text-red-600 hover:file:bg-red-100" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Attach Video</label>
+                  <input type="file" accept="video/*" onChange={e => setForm(f => ({ ...f, video: e.target.files[0] }))}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-red-400 transition file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300" />
+                </div>
               </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={handleSubmit}
@@ -151,10 +180,32 @@ export default function Incidents({ isAdmin = false }) {
                     <p className="text-sm font-bold text-slate-800 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100">
                       "{i.description}"
                     </p>
+                    {(i.image || i.video) && (
+                      <div className="flex flex-wrap gap-4 mt-3">
+                        {i.image && (
+                          <div className="relative overflow-hidden rounded-2xl border border-slate-200 max-w-sm">
+                            <img src={i.image} alt="Incident Photo" className="w-full h-auto max-h-60 object-cover" />
+                          </div>
+                        )}
+                        {i.video && (
+                          <div className="relative overflow-hidden rounded-2xl border border-slate-200 max-w-sm">
+                            <video src={i.video} controls className="w-full h-auto max-h-60 object-cover" />
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                       <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {i.ward}{i.polling_station ? ` · ${i.polling_station}` : ''}</span>
                       <span className="text-slate-200">|</span>
                       <span>Reported by: {i.reporter_name}</span>
+                      {i.latitude && i.longitude && (
+                        <>
+                          <span className="text-slate-200">|</span>
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${i.latitude},${i.longitude}`} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">
+                            View GPS Map
+                          </a>
+                        </>
+                      )}
                     </div>
                   </div>
                   

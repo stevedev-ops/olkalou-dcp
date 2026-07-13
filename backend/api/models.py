@@ -41,6 +41,15 @@ class Member(AbstractBaseUser, PermissionsMixin):
     )
     is_admin = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
+    is_security = models.BooleanField(default=False)  # True if they are part of the security detail
+    SECURITY_RANKS = [
+        ('none', 'None'),
+        ('guard', 'Guard'),
+        ('station_commander', 'Station Commander'),
+        ('ward_commander', 'Ward Commander'),
+    ]
+    security_rank = models.CharField(max_length=50, choices=SECURITY_RANKS, default='none')
+    is_security_only = models.BooleanField(default=False)  # If True, locked out of campaign features
     is_active = models.BooleanField(default=True)
     is_voter_verified = models.BooleanField(default=False)
     has_voted = models.BooleanField(default=False)  # Election-day GOTV strike-off
@@ -192,6 +201,10 @@ class IncidentReport(models.Model):
     polling_station = models.CharField(max_length=255)
     description = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    image = models.ImageField(upload_to='incident_images/', null=True, blank=True)
+    video = models.FileField(upload_to='incident_videos/', null=True, blank=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
     reported_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -282,3 +295,33 @@ class EmergencyBroadcast(models.Model):
 
     def __str__(self):
         return f"[{self.severity.upper()}] {self.message[:50]}..."
+
+# ─── Security Enhancements (Guards / Post Commands) ──────────────────────────
+class SecurityLog(models.Model):
+    """Routine status checks (SitReps) and Panic Alerts from Security detail."""
+    STATUS_CHOICES = [
+        ('all_clear', 'All Clear - Routine'),
+        ('crowd_building', 'Crowd Building'),
+        ('tense', 'Tense Situation'),
+        ('panic', 'PANIC / SEND BACKUP'),
+    ]
+    guard = models.ForeignKey(Member, on_delete=models.CASCADE, related_name='security_logs')
+    ward = models.CharField(max_length=255)
+    polling_station = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='all_clear')
+    notes = models.TextField(blank=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    logged_at = models.DateTimeField(auto_now_add=True)
+    
+    RESOLUTION_CHOICES = [
+        ('pending', 'Pending'),
+        ('dispatched_police', 'Dispatched Police'),
+        ('dispatched_qrt', 'Dispatched QRT'),
+        ('false_alarm', 'False Alarm'),
+        ('resolved_internally', 'Resolved Internally'),
+    ]
+    resolution_action = models.CharField(max_length=50, choices=RESOLUTION_CHOICES, default='pending')
+
+    def __str__(self):
+        return f"{self.get_status_display()} at {self.polling_station} by {self.guard.full_name}"

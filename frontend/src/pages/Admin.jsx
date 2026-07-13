@@ -16,6 +16,7 @@ import Transport from "./Transport";
 import PollingAgents from "./PollingAgents";
 import Pvt from "./Pvt";
 import Incidents from "./Incidents";
+import SecurityCommand from "./SecurityCommand";
 import PhoneBank from "./PhoneBank";
 import ContactMatcher from "./ContactMatcher";
 import { exportToCSV } from "../lib/exportUtils";
@@ -220,6 +221,7 @@ export default function Admin({ onLogout }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [addModalStep, setAddModalStep] = useState('lookup');
+  const [showSecurityModal, setShowSecurityModal] = useState(false);
 
   // Sidebar Notification Counts
   const [transportCount, setTransportCount] = useState(0);
@@ -641,6 +643,7 @@ export default function Admin({ onLogout }) {
                   <NavItem id="mobilizers" icon={Star} label="Mobilizers" count={roots.length} activeTab={activeTab} setActiveTab={setActiveTab} />
                   <NavItem id="all" icon={Users} label="All Members" count={totalRegistered} activeTab={activeTab} setActiveTab={setActiveTab} />
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Intelligence</p>
+                  <NavItem id="security-command" icon={ShieldCheck} label="HQ Security Command" activeTab={activeTab} setActiveTab={setActiveTab} />
                   <NavItem id="voter-registry" icon={Database} label="Voter Registry" activeTab={activeTab} setActiveTab={setActiveTab} />
                   <NavItem id="analytics" icon={BarChart3} label="System Analytics" activeTab={activeTab} setActiveTab={setActiveTab} />
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Operations</p>
@@ -696,6 +699,7 @@ export default function Admin({ onLogout }) {
                   {activeTab === 'tree' && 'Mobilization Tree'}
                   {activeTab === 'mobilizers' && 'Root Directory'}
                   {activeTab === 'all' && 'Membership Registry'}
+                  {activeTab === 'security-command' && 'HQ Security Command'}
                   {activeTab === 'voter-registry' && '2022 Official Voter Database'}
                   {activeTab === 'analytics' && 'Official Party Reports'}
                   {activeTab === 'coverage' && 'Polling Coverage Map'}
@@ -719,14 +723,23 @@ export default function Admin({ onLogout }) {
                </div>
             </div>
          </div>
-         <button onClick={() => { setShowAddModal(true); setAddModalStep('lookup'); setAddModalPrefill(null); }} className="hidden sm:flex bg-slate-950 text-white px-5 py-3 rounded-xl font-bold uppercase tracking-widest text-xs items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg">
-            <Plus size={16} className="text-dcp-green" /> Establish Root
-         </button>
+         <div className="flex items-center gap-2 hidden sm:flex">
+           <button onClick={() => { setShowSecurityModal(true); }} className="bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] items-center gap-2 hover:bg-slate-700 transition-colors shadow-lg flex">
+              <ShieldCheck size={14} className="text-blue-400" /> Deploy Security
+           </button>
+           <button onClick={() => { setShowAddModal(true); setAddModalStep('lookup'); setAddModalPrefill(null); }} className="bg-slate-950 text-white px-5 py-3 rounded-xl font-bold uppercase tracking-widest text-xs items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg flex">
+              <Plus size={16} className="text-dcp-green" /> Establish Root
+           </button>
+         </div>
         </header>
 
         <main className="flex-1 p-4 md:p-8 relative flex flex-col md:flex-row gap-6">
           <div className="flex-1 flex flex-col w-full">
-            {activeTab === "overview" ? (
+            {activeTab === "security-command" ? (
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 w-full max-w-6xl mx-auto">
+                <SecurityCommand />
+              </div>
+            ) : activeTab === "overview" ? (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col relative overflow-hidden">
@@ -1462,6 +1475,112 @@ export default function Admin({ onLogout }) {
                     </div>
 
                     <div className="pt-6 border-t border-slate-800 space-y-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.25em]">Role Management</p>
+                      </div>
+                      <div className="space-y-3">
+                        <select 
+                          className="w-full bg-slate-950 border border-slate-800 text-white text-xs font-bold p-3 rounded-xl focus:border-dcp-green outline-none"
+                          value={selectedMember.security_rank || 'none'}
+                          onChange={(e) => {
+                            api.updateMemberRole(selectedMember.id, { security_rank: e.target.value })
+                              .then(() => {
+                                toast.success('Rank updated');
+                                setSelectedMember({...selectedMember, security_rank: e.target.value});
+                              });
+                          }}
+                        >
+                          <option value="none">Standard Member (No Rank)</option>
+                          <option value="guard">Guard</option>
+                          <option value="station_commander">Station Commander</option>
+                          <option value="ward_commander">Ward Commander</option>
+                        </select>
+                        
+                        {(selectedMember.security_rank && selectedMember.security_rank !== 'none') && (
+                          <>
+                            <div className="grid grid-cols-2 gap-2">
+                              <select
+                                className="w-full bg-slate-950 border border-slate-800 text-slate-400 text-[10px] font-bold p-3 rounded-xl outline-none"
+                                value={selectedMember.ward || ''}
+                                onChange={(e) => {
+                                  api.updateMemberRole(selectedMember.id, { ward: e.target.value, polling_station: '' })
+                                    .then(() => {
+                                      toast.success('Deployed to ' + e.target.value);
+                                      setSelectedMember({...selectedMember, ward: e.target.value, polling_station: ''});
+                                    });
+                                }}
+                              >
+                                <option value="">-- Deploy Ward --</option>
+                                {wardStationMap && wardStationMap.map(w => (
+                                  <option key={w.id} value={w.name}>{w.label}</option>
+                                ))}
+                              </select>
+
+                              <select
+                                className="w-full bg-slate-950 border border-slate-800 text-slate-400 text-[10px] font-bold p-3 rounded-xl outline-none"
+                                value={selectedMember.polling_station || ''}
+                                disabled={!selectedMember.ward}
+                                onChange={(e) => {
+                                  api.updateMemberRole(selectedMember.id, { polling_station: e.target.value })
+                                    .then(() => {
+                                      toast.success('Deployed to ' + e.target.value);
+                                      setSelectedMember({...selectedMember, polling_station: e.target.value});
+                                    });
+                                }}
+                              >
+                                <option value="">-- Deploy Station --</option>
+                                {selectedMember.ward && wardStationMap && 
+                                 (wardStationMap.find(w => w.name === selectedMember.ward)?.centers || []).map(s => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                              </select>
+                            </div>
+                            
+                            <div className="flex items-center justify-between bg-black/40 p-3 rounded-xl border border-white/5">
+                              <div>
+                                <p className="text-xs font-bold text-white">Security Only Mode</p>
+                                <p className="text-[9px] text-slate-500">Hides campaign tools</p>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  const newVal = !selectedMember.is_security_only;
+                                  api.updateMemberRole(selectedMember.id, { is_security_only: newVal })
+                                    .then(() => {
+                                      toast.success(newVal ? 'Locked to security only' : 'Campaign tools enabled');
+                                      setSelectedMember({...selectedMember, is_security_only: newVal});
+                                    });
+                                }}
+                                className={`w-12 h-6 rounded-full transition-colors relative ${selectedMember.is_security_only ? 'bg-dcp-green' : 'bg-slate-700'}`}
+                              >
+                                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${selectedMember.is_security_only ? 'left-7' : 'left-1'}`} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                          <div className="flex items-center justify-between bg-black/40 p-3 rounded-xl border border-white/5">
+                            <div>
+                              <p className="text-xs font-bold text-white">Security Only Mode</p>
+                              <p className="text-[9px] text-slate-500">Hides campaign tools</p>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                const newVal = !selectedMember.is_security_only;
+                                api.updateMemberRole(selectedMember.id, { is_security_only: newVal })
+                                  .then(() => {
+                                    toast.success(newVal ? 'Locked to security only' : 'Campaign tools enabled');
+                                    setSelectedMember({...selectedMember, is_security_only: newVal});
+                                  });
+                              }}
+                              className={`w-12 h-6 rounded-full transition-colors relative ${selectedMember.is_security_only ? 'bg-dcp-green' : 'bg-slate-700'}`}
+                            >
+                              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${selectedMember.is_security_only ? 'left-7' : 'left-1'}`} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-800 space-y-4">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.25em] mb-3">Referral Lineage</p>
                       <div className="grid gap-3">
                         <LineageCard
@@ -1513,6 +1632,76 @@ export default function Admin({ onLogout }) {
           </AnimatePresence>
         </main>
       </div>
+
+      <AnimatePresence>
+        {showSecurityModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden max-h-[90vh] flex flex-col"
+            >
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-900">Deploy Security</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Fast-Track Enrollment</p>
+                </div>
+                <button onClick={() => setShowSecurityModal(false)} className="p-2 hover:bg-slate-200 rounded-xl text-slate-500 transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto custom-scrollbar">
+                 <form onSubmit={(e) => {
+                   e.preventDefault();
+                   const fd = new FormData(e.target);
+                   const data = Object.fromEntries(fd.entries());
+                   data.is_security_only = true;
+                   
+                   api.register(data).then(({ error }) => {
+                     if (error) { toast.error(error.message || 'Failed to deploy'); return; }
+                     toast.success('Security Personnel Deployed!');
+                     setShowSecurityModal(false);
+                     loadMembersPage(0, searchQuery, voterStatusFilter);
+                   });
+                 }} className="space-y-4">
+                    <input name="full_name" placeholder="Full Name" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition" />
+                    <input name="national_id" placeholder="ID Number" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition" />
+                    <input name="phone" placeholder="Phone Number" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition" />
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <select name="security_rank" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition">
+                        <option value="">- Select Rank -</option>
+                        <option value="guard">Guard</option>
+                        <option value="station_commander">Station Commander</option>
+                        <option value="ward_commander">Ward Commander</option>
+                      </select>
+                      <select name="ward" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition" onChange={(e) => {
+                         const stations = (wardStationMap.find(w => w.name === e.target.value)?.centers || []);
+                         const sSelect = document.getElementById('sec_station_select');
+                         sSelect.innerHTML = '<option value="">- Select Station -</option>' + stations.map(s => `<option value="${s}">${s}</option>`).join('');
+                      }}>
+                        <option value="">- Select Ward -</option>
+                        {wardStationMap && wardStationMap.map(w => <option key={w.id} value={w.name}>{w.label}</option>)}
+                      </select>
+                    </div>
+                    <select id="sec_station_select" name="polling_station" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-blue-500 transition">
+                      <option value="">- Select Station -</option>
+                    </select>
+
+                    <button type="submit" className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-sm uppercase tracking-widest mt-4">
+                       Deploy Now
+                    </button>
+                 </form>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
 
       <AnimatePresence>
         {showAddModal && (
