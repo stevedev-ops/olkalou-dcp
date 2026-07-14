@@ -232,7 +232,7 @@ function StationCommanderView({ profile }) {
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.35em] text-blue-400 mb-1">Station Commander</p>
             <h1 className="text-2xl font-black text-white italic uppercase">{profile.polling_station || "Station Command"}</h1>
-            <p className="text-slate-400 text-xs mt-1">Manage your team of 9 guards and oversee station security.</p>
+            <p className="text-slate-400 text-xs mt-1">Manage your team of {personnel.length} guards and oversee station security.</p>
           </div>
         </div>
       </div>
@@ -243,7 +243,7 @@ function StationCommanderView({ profile }) {
             <div className="p-2 bg-blue-50 text-blue-600 rounded-xl"><Users size={20} /></div>
             <h2 className="font-black uppercase tracking-widest text-slate-800">Station Roster</h2>
           </div>
-          <p className="text-sm text-slate-500 mb-4">You are responsible for ensuring your 9 assigned guards submit their SitReps.</p>
+          <p className="text-sm text-slate-500 mb-4">You are responsible for ensuring your {personnel.length} assigned guards submit their SitReps.</p>
           <div className="space-y-3">
              {personnel.length === 0 ? (
                <p className="text-sm text-slate-400">No guards enrolled at this station yet.</p>
@@ -306,7 +306,7 @@ function WardCommanderView({ profile }) {
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.35em] text-purple-400 mb-1">Ward Commander</p>
               <h1 className="text-2xl font-black text-white italic uppercase">{profile.ward || "Ward Command"}</h1>
-              <p className="text-slate-400 text-sm mt-1">Overseeing all polling stations and station commanders in this ward.</p>
+              <p className="text-slate-400 text-sm mt-1">Overseeing {personnel.length} personnel and all polling stations in this ward.</p>
             </div>
           </div>
         </div>
