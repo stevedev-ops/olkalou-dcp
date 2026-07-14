@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShieldAlert, CheckCircle, Navigation, Clock, ShieldCheck, MapPin, EyeOff, Users, AlertTriangle, Building2, PhoneCall } from "lucide-react";
+import { ShieldAlert, CheckCircle, Navigation, Clock, ShieldCheck, MapPin, EyeOff, Users, AlertTriangle, Building2, PhoneCall, Star } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { useLocationData } from "../contexts/LocationContext";
@@ -356,15 +356,18 @@ function WardCommanderView({ profile }) {
                    </span>
                  </div>
                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                   {people.map(p => (
-                     <div key={p.id} className="bg-white p-3 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
+                   {people.sort((a, b) => a.security_rank === 'station_commander' ? -1 : b.security_rank === 'station_commander' ? 1 : 0).map(p => (
+                     <div key={p.id} className={`p-3 rounded-xl border flex justify-between items-center shadow-sm ${p.security_rank === 'station_commander' ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100'}`}>
                        <div>
-                         <p className="font-bold text-slate-800 text-sm">{p.full_name}</p>
-                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
+                         <div className="flex items-center gap-1.5">
+                           <p className="font-bold text-slate-800 text-sm">{p.full_name}</p>
+                           {p.security_rank === 'station_commander' && <Star size={12} className="text-blue-500 fill-blue-500" />}
+                         </div>
+                         <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${p.security_rank === 'station_commander' ? 'text-blue-600' : 'text-slate-400'}`}>
                            {p.security_rank.replace('_', ' ')}
                          </p>
                        </div>
-                       <a href={`tel:${p.phone}`} className="flex items-center justify-center w-8 h-8 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition shrink-0">
+                       <a href={`tel:${p.phone}`} className={`flex items-center justify-center w-8 h-8 rounded-lg transition shrink-0 ${p.security_rank === 'station_commander' ? 'bg-blue-200 text-blue-700 hover:bg-blue-300' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'}`}>
                          <PhoneCall size={14} />
                        </a>
                      </div>
