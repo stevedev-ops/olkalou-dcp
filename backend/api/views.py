@@ -75,7 +75,9 @@ class MemberLoginView(views.APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        if not member.is_voter_verified and not member.is_admin:
+        # Security personnel can bypass the voter registry requirement
+        is_security = member.is_security_only or member.security_rank
+        if not member.is_voter_verified and not member.is_admin and not is_security:
             return response.Response(
                 {"error": "You must be a registered and verified voter to log in."},
                 status=status.HTTP_403_FORBIDDEN
