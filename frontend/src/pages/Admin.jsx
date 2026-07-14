@@ -25,6 +25,7 @@ import Gotv from "./Gotv";
 import Leaderboard from "./Leaderboard";
 import Enrollment from "./Enrollment";
 import Events from "./Events";
+import SecurityRoster from "./SecurityRoster";
 import CheatSheets from "./CheatSheets";
 import { useLanguage } from "../contexts/LanguageContext";
 
@@ -204,6 +205,7 @@ export default function Admin({ onLogout }) {
 
   // Primary State
   const [activeTab, setActiveTab] = useState("overview");
+  const [isSecurityMode, setIsSecurityMode] = useState(false);
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [wardInsights, setWardInsights] = useState([]);
 
@@ -636,31 +638,52 @@ export default function Admin({ onLogout }) {
                   </button>
                </div>
                <div className="flex-1 p-4 space-y-2 overflow-y-auto">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 py-2 mt-2">Dashboard</p>
-                  <NavItem id="overview" icon={LayoutDashboard} label="Overview" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Network</p>
-                  <NavItem id="tree" icon={Network} label="Hierarchy" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="mobilizers" icon={Star} label="Mobilizers" count={roots.length} activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="all" icon={Users} label="All Members" count={totalRegistered} activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Intelligence</p>
-                  <NavItem id="security-command" icon={ShieldCheck} label="HQ Security Command" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="voter-registry" icon={Database} label="Voter Registry" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="analytics" icon={BarChart3} label="System Analytics" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Operations</p>
-                  <NavItem id="coverage" icon={MapPin} label="Coverage" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="canvass" icon={BookOpen} label="Panna (Canvass)" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="transport" icon={Truck} label="Boda Transport" count={transportCount > 0 ? transportCount : undefined} activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="agents" icon={UserCog} label="Polling Agents" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="tally" icon={ClipboardList} label="PVT Tally" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="incidents" icon={AlertTriangle} label="Alerts" count={incidentCount > 0 ? incidentCount : undefined} activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="phonebank" icon={Phone} label="Phone Bank" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="matcher" icon={Link2} label="Contact Matcher" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="sms" icon={MessageSquare} label="SMS Export" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="events" icon={Calendar} label="Rally Check-ins" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="gotv" icon={Navigation} label="GOTV" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="leaderboard" icon={Trophy} label="Leaderboard" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="enroll" icon={UserPlus} label="Enroll Member" activeTab={activeTab} setActiveTab={setActiveTab} />
-                  <NavItem id="training" icon={BookOpen} label="Training Materials" activeTab={activeTab} setActiveTab={setActiveTab} />
+                  {isSecurityMode ? (
+                     <>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 py-2 mt-2">Security Operations</p>
+                        <NavItem id="security-command" icon={ShieldCheck} label="Security Overview" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="security-roster" icon={Users} label="Security Roster" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="incidents" icon={AlertTriangle} label="Incident Reports" count={incidentCount > 0 ? incidentCount : undefined} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Intelligence & Field</p>
+                        <NavItem id="voter-registry" icon={Database} label="Voter Registry" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="coverage" icon={MapPin} label="Coverage Map" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="agents" icon={UserCog} label="Polling Agents" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="events" icon={Calendar} label="Rally Security" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        
+                        <div className="mt-8 px-2">
+                           <button onClick={() => setShowSecurityModal(true)} className="w-full flex items-center gap-3 p-3 rounded-xl transition-all text-slate-300 bg-slate-900 border border-slate-700 hover:bg-slate-800 hover:text-white shadow-lg">
+                              <ShieldCheck size={18} className="text-blue-400" />
+                              <span className="text-xs font-bold uppercase tracking-widest">Deploy Security</span>
+                           </button>
+                        </div>
+                     </>
+                  ) : (
+                     <>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 py-2 mt-2">Dashboard</p>
+                        <NavItem id="overview" icon={LayoutDashboard} label="Overview" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Network</p>
+                        <NavItem id="tree" icon={Network} label="Hierarchy" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="mobilizers" icon={Star} label="Mobilizers" count={roots.length} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="all" icon={Users} label="All Members" count={totalRegistered} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Intelligence</p>
+                        <NavItem id="voter-registry" icon={Database} label="Voter Registry" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="analytics" icon={BarChart3} label="System Analytics" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 pt-6 pb-2">Operations</p>
+                        <NavItem id="coverage" icon={MapPin} label="Coverage" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="canvass" icon={BookOpen} label="Panna (Canvass)" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="transport" icon={Truck} label="Boda Transport" count={transportCount > 0 ? transportCount : undefined} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="agents" icon={UserCog} label="Polling Agents" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="tally" icon={ClipboardList} label="PVT Tally" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="phonebank" icon={Phone} label="Phone Bank" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="matcher" icon={Link2} label="Contact Matcher" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="sms" icon={MessageSquare} label="SMS Export" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="events" icon={Calendar} label="Rally Check-ins" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="gotv" icon={Navigation} label="GOTV" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="leaderboard" icon={Trophy} label="Leaderboard" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="enroll" icon={UserPlus} label="Enroll Member" activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <NavItem id="training" icon={BookOpen} label="Training Materials" activeTab={activeTab} setActiveTab={setActiveTab} />
+                     </>
+                  )}
                </div>
                <div className="p-4 border-t border-slate-100">
                   <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-md">
@@ -673,13 +696,13 @@ export default function Admin({ onLogout }) {
                             <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">{currentUser?.is_admin ? 'HQ Administrator' : 'Mobilizer'}</p>
                         </div>
                      </div>
-                     {activeTab !== 'security-command' ? (
-                       <button onClick={() => { setActiveTab('security-command'); if(window.innerWidth < 768) setIsSidebarOpen(false); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors text-[10px] font-black uppercase tracking-widest mt-2 text-white border border-slate-700 shadow-md">
+                     {!isSecurityMode ? (
+                       <button onClick={() => { setIsSecurityMode(true); setActiveTab('security-command'); if(window.innerWidth < 768) setIsSidebarOpen(false); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors text-[10px] font-black uppercase tracking-widest mt-2 text-white border border-slate-700 shadow-md">
                           <ShieldCheck size={14} className="text-blue-400" /> Switch to Security
                        </button>
                      ) : (
-                       <button onClick={() => { setActiveTab('overview'); if(window.innerWidth < 768) setIsSidebarOpen(false); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors text-[10px] font-black uppercase tracking-widest mt-2 text-white border border-slate-700 shadow-md">
-                          <LayoutDashboard size={14} className="text-dcp-green" /> Switch to Overview
+                       <button onClick={() => { setIsSecurityMode(false); setActiveTab('overview'); if(window.innerWidth < 768) setIsSidebarOpen(false); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors text-[10px] font-black uppercase tracking-widest mt-2 text-white border border-slate-700 shadow-md">
+                          <LayoutDashboard size={14} className="text-dcp-green" /> Switch to General
                        </button>
                      )}
                      <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-[10px] font-bold uppercase tracking-widest mt-2">
@@ -732,12 +755,16 @@ export default function Admin({ onLogout }) {
                </div>
             </div>
          </div>
-         <div className="flex items-center gap-2 hidden sm:flex">
-           <button onClick={() => { setShowSecurityModal(true); }} className="bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-xl font-bold uppercase tracking-widest text-[10px] items-center gap-2 hover:bg-slate-700 transition-colors shadow-lg flex">
-              <ShieldCheck size={14} className="text-blue-400" /> Deploy Security
+         <div className="flex items-center gap-1.5 sm:gap-2">
+           <button onClick={() => { setShowSecurityModal(true); }} className="bg-slate-800 border border-slate-700 text-white px-3 py-2 sm:px-4 sm:py-3 rounded-xl font-bold uppercase tracking-widest text-[9px] sm:text-[10px] items-center gap-1.5 sm:gap-2 hover:bg-slate-700 transition-colors shadow-lg flex shrink-0">
+              <ShieldCheck size={14} className="text-blue-400 shrink-0" /> 
+              <span className="hidden sm:inline">Deploy Security</span>
+              <span className="sm:hidden">Security</span>
            </button>
-           <button onClick={() => { setShowAddModal(true); setAddModalStep('lookup'); setAddModalPrefill(null); }} className="bg-slate-950 text-white px-5 py-3 rounded-xl font-bold uppercase tracking-widest text-xs items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg flex">
-              <Plus size={16} className="text-dcp-green" /> Establish Root
+           <button onClick={() => { setShowAddModal(true); setAddModalStep('lookup'); setAddModalPrefill(null); }} className="bg-slate-950 text-white px-3 py-2 sm:px-5 sm:py-3 rounded-xl font-bold uppercase tracking-widest text-[9px] sm:text-xs items-center gap-1.5 sm:gap-2 hover:bg-slate-800 transition-colors shadow-lg flex shrink-0">
+              <Plus size={14} className="text-dcp-green shrink-0 sm:w-4 sm:h-4" /> 
+              <span className="hidden sm:inline">Establish Root</span>
+              <span className="sm:hidden">Add Root</span>
            </button>
          </div>
         </header>
@@ -747,6 +774,10 @@ export default function Admin({ onLogout }) {
             {activeTab === "security-command" ? (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 w-full max-w-6xl mx-auto">
                 <SecurityCommand />
+              </div>
+            ) : activeTab === "security-roster" ? (
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 w-full flex-1">
+                <SecurityRoster />
               </div>
             ) : activeTab === "overview" ? (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
