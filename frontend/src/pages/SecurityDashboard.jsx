@@ -336,21 +336,40 @@ function WardCommanderView({ profile }) {
            <div className="p-2 bg-purple-50 text-purple-600 rounded-xl"><Users size={20} /></div>
            <h2 className="font-black uppercase tracking-widest text-slate-800">Ward Personnel Roster</h2>
          </div>
-         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+         <div className="space-y-6 mb-8">
            {personnel.length === 0 ? (
              <p className="text-sm text-slate-400">No personnel enrolled in this ward yet.</p>
            ) : (
-             personnel.map(p => (
-               <div key={p.id} className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-between items-center">
-                 <div>
-                   <p className="font-bold text-slate-700 text-sm">{p.full_name}</p>
-                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                     {p.security_rank.replace('_', ' ')} · {p.polling_station || 'No Station'}
-                   </p>
+             Object.entries(
+               personnel.reduce((acc, p) => {
+                 const st = p.polling_station || 'Unassigned';
+                 if (!acc[st]) acc[st] = [];
+                 acc[st].push(p);
+                 return acc;
+               }, {})
+             ).map(([station, people]) => (
+               <div key={station} className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                 <div className="flex justify-between items-center mb-3 border-b border-slate-200 pb-2">
+                   <h3 className="font-black text-slate-700 uppercase tracking-widest text-xs">{station}</h3>
+                   <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 bg-purple-100 text-purple-700 rounded-md">
+                     {people.length} Deployed
+                   </span>
                  </div>
-                 <a href={`tel:${p.phone}`} className="flex items-center justify-center w-8 h-8 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition shrink-0">
-                   <PhoneCall size={14} />
-                 </a>
+                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                   {people.map(p => (
+                     <div key={p.id} className="bg-white p-3 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
+                       <div>
+                         <p className="font-bold text-slate-800 text-sm">{p.full_name}</p>
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
+                           {p.security_rank.replace('_', ' ')}
+                         </p>
+                       </div>
+                       <a href={`tel:${p.phone}`} className="flex items-center justify-center w-8 h-8 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition shrink-0">
+                         <PhoneCall size={14} />
+                       </a>
+                     </div>
+                   ))}
+                 </div>
                </div>
              ))
            )}
