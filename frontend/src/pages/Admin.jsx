@@ -693,7 +693,7 @@ export default function Admin({ onLogout }) {
                         </div>
                         <div>
                             <p className="text-xs font-black uppercase tracking-widest">{currentUser?.full_name || 'System Admin'}</p>
-                            <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">{currentUser?.is_admin ? 'HQ Administrator' : 'Mobilizer'}</p>
+                            <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">{currentUser?.is_admin ? 'HQ Administrator' : currentUser?.security_rank ? currentUser.security_rank.replace('_', ' ') : currentUser?.is_security_only ? 'Security Personnel' : 'Mobilizer'}</p>
                         </div>
                      </div>
                      {!isSecurityMode ? (

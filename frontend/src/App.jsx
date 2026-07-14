@@ -174,7 +174,7 @@ function MemberSidebar({ profile, onLogout, isOpen, onClose }) {
                 <div className="flex items-center gap-3 mb-3 mt-3">
                   <div className="min-w-0">
                     <p className="text-xs font-black uppercase tracking-widest truncate">
-                      {profile?.full_name || "Mobilizer"}
+                      {profile?.full_name || (profile?.is_security_only || profile?.security_rank ? "Security Personnel" : "Mobilizer")}
                     </p>
                     <p className="text-[9px] text-slate-400 font-bold tracking-widest uppercase truncate">
                       {profile?.ward || "DCP Member"}
